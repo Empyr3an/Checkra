@@ -10,7 +10,9 @@ import re
 from collections import Counter
 from string import punctuation
 import contractions
-# import neuralcoref
+import neuralcoref
+
+
 nlp = spacy.load('en_core_web_sm')
 Token.set_extension("partquote", default=False)
 Span.set_extension("quote", getter= lambda span: any(tok._.partquote for tok in span))
@@ -40,21 +42,21 @@ def prevent_sbd(doc): #ending boundary detection in spacy https://github.com/exp
             dquote_open = False if dquote_open else True
         elif token.text =="'":
             quote_open = False if quote_open else True
-        elif token.is_bracket and token.is_left_punct:
-            bracket_open = True
-        elif token.is_bracket and token.is_right_punct:
-            bracket_open = False
-        elif ind<len(doc)-2:
-            if doc[token.i+1].text == '’s':
-#                 print(doc[token.i-1], doc[token.i])
-                is_possessive = True
-            elif token.text == '’s':
-                is_possessive = True
+#         elif token.is_bracket and token.is_left_punct:
+#             bracket_open = True
+#         elif token.is_bracket and token.is_right_punct:
+#             bracket_open = False
+#         elif ind<len(doc)-2:
+#             if doc[token.i+1].text == '’s':
+# #                 print(doc[token.i-1], doc[token.i])
+#                 is_possessive = True
+#             elif token.text == '’s':
+#                 is_possessive = True
                 
-        can_sbd = not (quote_open or bracket_open or dquote_open)
-        if is_possessive==True:
-            can_sbd = False
-            is_possessive = False
+        can_sbd = not (quote_open or dquote_open)
+#         if is_possessive==True:
+#             can_sbd = False
+#             is_possessive = False
     return doc
 def custom_tokenizer(nlp): #keeps hyphens together
     infixes = (
@@ -118,6 +120,8 @@ matcher.add('QUOTED', None, pattern1, pattern4)
 nlp.tokenizer = custom_tokenizer(nlp)
 
 nlp.add_pipe(quote_marker, first=True)  # add it right after the tokenizer
+
+neuralcoref.add_to_pipe(nlp)
 
 # alltext = nlp(open("all_fix.txt").read())
 # print("done")
