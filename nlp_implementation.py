@@ -4,7 +4,7 @@ from spacy import displacy
 from spacy.matcher import Matcher
 from spacy.tokenizer import Tokenizer
 from spacy.util import compile_prefix_regex, compile_infix_regex, compile_suffix_regex
-from spacy.tokens import Token
+from spacy.tokens import Token, Span
 from spacy.lang.char_classes import ALPHA, ALPHA_LOWER, ALPHA_UPPER, CONCAT_QUOTES, LIST_ELLIPSES, LIST_ICONS
 import re
 from collections import Counter
@@ -13,6 +13,8 @@ import contractions
 # import neuralcoref
 nlp = spacy.load('en_core_web_sm')
 Token.set_extension("partquote", default=False)
+Span.set_extension("quote", getter= lambda span: any(tok._.partquote for tok in span))
+
 
 def text_fix(text): #expands contractions, fixes quotations, possessive nouns use special character
     text= contractions.fix(text).translate(str.maketrans({"‘":"'", "’":"'", "“":"\"", "”":"\""})).replace("\n", " ").replace("a.k.a.", "also known as").strip()
@@ -28,14 +30,12 @@ def prevent_sbd(doc): #ending boundary detection in spacy https://github.com/exp
     can_sbd = True
     for ind, token in enumerate(doc):
         # Don't do sbd on sthese tokens
-        if ind<len(doc)-2:
-            if doc[token.i+1].text == "’s":
-                print(token)
+#         if ind<len(doc)-2:
+#             if doc[token.i+1].text == "’s":
+#                 print(token)
         if not can_sbd:
             token.is_sent_start = False
 
-        # Not using .is_quote so that we don't mix-and-match different kinds of quotes (e.g. ' and ")
-        # Especially useful since quotes don't seem to work well with .is_left_punct or .is_right_punct
         if token.text == '"':
             dquote_open = False if dquote_open else True
         elif token.text =="'":
@@ -46,7 +46,7 @@ def prevent_sbd(doc): #ending boundary detection in spacy https://github.com/exp
             bracket_open = False
         elif ind<len(doc)-2:
             if doc[token.i+1].text == '’s':
-                print(doc[token.i-1], doc[token.i])
+#                 print(doc[token.i-1], doc[token.i])
                 is_possessive = True
             elif token.text == '’s':
                 is_possessive = True
@@ -55,8 +55,6 @@ def prevent_sbd(doc): #ending boundary detection in spacy https://github.com/exp
         if is_possessive==True:
             can_sbd = False
             is_possessive = False
-#         if dquote_open or bracket_open: #or quote_open or is_possessive
-#             can_sbd = False
     return doc
 def custom_tokenizer(nlp): #keeps hyphens together
     infixes = (
@@ -92,7 +90,7 @@ def custom_tokenizer(nlp): #keeps hyphens together
 def realquote(doc, left, right):
     fake_quotes = ["like"]
 #     print(len(doc[left:right]))
-    if len(doc[left:right])<5 or any(fake in doc[left-3:left].text for fake in fake_quotes):
+    if len(doc[left:right])<6 or any(fake in doc[left-3:left].text for fake in fake_quotes):
 #         print("FAKEEEEEEEEEEEEEEEERERERERERERERRERE")
 #         print(doc[left-3:right])
         return False
@@ -119,7 +117,6 @@ matcher.add('QUOTED', None, pattern1, pattern4)
 # nlp.add_pipe(quote_merger, first=True)  # add it right after the tokenizer
 nlp.tokenizer = custom_tokenizer(nlp)
 
-# Span.set_extension("quote", getter=)
 nlp.add_pipe(quote_marker, first=True)  # add it right after the tokenizer
 
 # alltext = nlp(open("all_fix.txt").read())
