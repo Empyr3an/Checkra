@@ -1,4 +1,5 @@
 import spacy
+nlp = spacy.load('en_core_web_sm')
 from spacy.symbols import ORTH, LEMMA
 from spacy import displacy
 from spacy.matcher import Matcher
@@ -11,16 +12,10 @@ from collections import Counter
 from string import punctuation
 import contractions
 import neuralcoref
+coref = neuralcoref.NeuralCoref(nlp.vocab)
+import pytextrank
 
 
-nlp = spacy.load('en_core_web_sm')
-Token.set_extension("partquote", default=False)
-Span.set_extension("quote", getter= lambda span: any(tok._.partquote for tok in span))
-
-
-def text_fix(text): #expands contractions, fixes quotations, possessive nouns use special character
-    text= contractions.fix(text).translate(str.maketrans({"‘":"'", "’":"'", "“":"\"", "”":"\""})).replace("\n", " ").replace("a.k.a.", "also known as").strip()
-    return re.sub(r"([a-z])'s",r"\1’s", text)
 
 
 def prevent_sbd(doc): #ending boundary detection in spacy https://github.com/explosion/spaCy/issues/3553
@@ -42,22 +37,24 @@ def prevent_sbd(doc): #ending boundary detection in spacy https://github.com/exp
             dquote_open = False if dquote_open else True
         elif token.text =="'":
             quote_open = False if quote_open else True
-#         elif token.is_bracket and token.is_left_punct:
-#             bracket_open = True
-#         elif token.is_bracket and token.is_right_punct:
-#             bracket_open = False
-#         elif ind<len(doc)-2:
-#             if doc[token.i+1].text == '’s':
-# #                 print(doc[token.i-1], doc[token.i])
-#                 is_possessive = True
-#             elif token.text == '’s':
-#                 is_possessive = True
+        elif token.is_bracket and token.is_left_punct:
+            bracket_open = True
+        elif token.is_bracket and token.is_right_punct:
+            bracket_open = False
+        elif ind<len(doc)-2:
+            if doc[token.i+1].text == '’s':
+#                 print(doc[token.i-1], doc[token.i])
+                is_possessive = True
+            elif token.text == '’s':
+                is_possessive = True
                 
         can_sbd = not (quote_open or dquote_open)
-#         if is_possessive==True:
-#             can_sbd = False
-#             is_possessive = False
+        if is_possessive==True:
+            can_sbd = False
+            is_possessive = False
     return doc
+
+
 def custom_tokenizer(nlp): #keeps hyphens together
     infixes = (
         LIST_ELLIPSES+ LIST_ICONS
@@ -79,27 +76,23 @@ def custom_tokenizer(nlp): #keeps hyphens together
                                 infix_finditer=infix_re.finditer,
                                 token_match=nlp.tokenizer.token_match,
                                 rules=nlp.Defaults.tokenizer_exceptions)
+nlp.tokenizer = custom_tokenizer(nlp)
 
-# def quote_finder(doc): #merges quotes into one token
-#     matches = matcher(doc)
-#     cur = 0
-#     with doc.retokenize() as retok:
-#         for i in matches:
-#             if i[1] > cur:
-#                 retok.merge(doc[i[1]:i[2]], attrs={"LEMMA":"QUOTE"})
-#                 cur = i[2]
-#     return doc
-def realquote(doc, left, right):
-    fake_quotes = ["like"]
-#     print(len(doc[left:right]))
-    if len(doc[left:right])<6 or any(fake in doc[left-3:left].text for fake in fake_quotes):
-#         print("FAKEEEEEEEEEEEEEEEERERERERERERERRERE")
-#         print(doc[left-3:right])
-        return False
-    return True
+matcher = Matcher(nlp.vocab)
 
+quote_patterns = [
+    [{"ORTH": "'"}, {'OP': '*'}, {"ORTH": "'"}], 
+    [{'ORTH': '"'}, {'OP': '*'}, {'ORTH': '"'}]
+]
+
+matcher.add('QUOTED', None, *quote_patterns)
+
+#TODO FIX … MESSING UP QUOTING
 def quote_marker(doc): #merges quotes into one token
-    matches = matcher(doc)
+    realquote = lambda doc, left, right: False if len(doc[left:right])<6 or any(fake in doc[left-3:left].text for fake in fake_quotes) else True
+    
+    fake_quotes = ["like"] #trigger words for starting a quote
+    matches = [i for i in matcher(doc) if nlp.vocab.strings[i[0]]=="QUOTED"]
     cur = 0
     for i in matches:
         if i[1]>cur:
@@ -109,22 +102,56 @@ def quote_marker(doc): #merges quotes into one token
             cur = i[2]
     return doc
 
-matcher = Matcher(nlp.vocab)
-pattern1 = [{"ORTH": "'"}, {'OP': '*'}, {"ORTH": "'"}]
-pattern4 = [{'ORTH': '"'}, {'OP': '*'}, {'ORTH': '"'}]
 
+irrelevant_clause_patterns=[
+    [{"ORTH":","}, {'OP':"*", "IS_PUNCT":False}, {"ORTH":","}],
+    [{'IS_PUNCT': True},{'IS_SPACE': True, 'OP': '?'},{'IS_ALPHA': True},{'IS_ALPHA': True},{'IS_PUNCT': True}],
+    [{'IS_PUNCT': True},{'IS_SPACE': True, 'OP': '?'},{'IS_ALPHA': True},{'IS_PUNCT': True}],
+]
+
+matcher.add('IRRELEVANT', None, *irrelevant_clause_patterns)
+
+def irrelevant_marker(doc): #detects clauses with the word I
+    
+    matches = [i for i in matcher(doc) if nlp.vocab.strings[i[0]]=="IRRELEVANT"]
+    cur = 0
+    print(matches)
+    for sent in doc.sents:
+        if len(sent)<7:
+            for tok in sent:
+                tok._.irrelevant = True
+    for i in matches:
+        if i[1]>cur and len(doc[i[1]:i[2]])<7:
+            span = doc[i[1]:i[2]]
+            if any([tok.text == "I" for tok in span]):
+                for tok in span:
+                    tok._.irrelevant=True
+            cur = i[2]
+    return doc
+
+
+
+Token.set_extension("irrelevant", default=False)
+Token.set_extension("partquote", default=False)
+Span.set_extension("quote", getter= lambda span: any(tok._.partquote for tok in span))
+
+
+
+nlp.add_pipe(quote_marker, name='quotes', after="parser")  # add it right after the tokenizer
+nlp.add_pipe(irrelevant_marker, name='non-important', last=True)
 nlp.add_pipe(prevent_sbd, name='prevent-sbd', before='parser')
-matcher.add('QUOTED', None, pattern1, pattern4)
+nlp.add_pipe(coref, name='neuralcoref', after='ner')
+nlp.add_pipe(pytextrank.TextRank().PipelineComponent, name='textrank', after='neuralcoref')
 
-# nlp.add_pipe(quote_merger, first=True)  # add it right after the tokenizer
-nlp.tokenizer = custom_tokenizer(nlp)
 
-nlp.add_pipe(quote_marker, first=True)  # add it right after the tokenizer
 
-neuralcoref.add_to_pipe(nlp)
 
-# alltext = nlp(open("all_fix.txt").read())
-# print("done")
+def text_fix(text): #expands contractions, fixes quotations, possessive nouns use special character
+    text= contractions.fix(text).translate(str.maketrans({"‘":"'", "’":"'", "“":"\"", "”":"\""})).replace("\n", " ").replace("a.k.a.", "also known as").strip()
+    return re.sub(r"([a-z])'s",r"\1’s", text)
+
+allraw = nlp(text_fix(open("text_files/all.txt").read()))
+
 
 
 
@@ -156,7 +183,7 @@ def extract_money(input_text): #given sentence, extract descriptions of money an
 def top_sentence(text, limit):
     keyword = []
     pos_tag = ['PROPN', 'ADJ', 'NOUN', 'VERB']
-    doc = nlp(text.lower())
+    doc = nlp(text_fix(text.lower()))
     for token in doc:
         if(token.text in nlp.Defaults.stop_words or token.text in punctuation):
             continue
@@ -167,24 +194,18 @@ def top_sentence(text, limit):
     max_freq = Counter(keyword).most_common(1)[0][1] #frequency of most common word
     for w in freq_word:
         freq_word[w] = (freq_word[w]/max_freq)
-#     print(freq_word)
     sent_strength={}
     for sent in doc.sents: #loop through each word in each sentence
-        for word in sent:
-            if word.text in freq_word.keys():
-                if sent in sent_strength.keys(): #if sent already tracked, add weight, else init new sent
-                    sent_strength[sent]+=freq_word[word.text]
-#                     print(freq_word[word.text], word.text)
-#                     if freq_word[word.text] <=.1:
-#                         print(word.text)
-                else:
-                    sent_strength[sent]=freq_word[word.text]
-#                     print("sent", sent)
-#             print(sent, sent_strength[sent])
+        if sent._.quote==False:
+            for word in sent:
+                if word.text in freq_word.keys():
+                    if sent in sent_strength.keys(): #add weight to, else init new sent
+                        sent_strength[sent]+=freq_word[word.text]
+                    else:
+                        sent_strength[sent]=freq_word[word.text]
     
     summary = []
     
-#     print(sent_strength)
     sorted_x = sorted(sent_strength.items(), key=lambda kv: kv[1], reverse=True) #sort by strength of sentences
     counter = 0
     for i in range(len(sorted_x)):
@@ -193,13 +214,8 @@ def top_sentence(text, limit):
         counter += 1
         if(counter >= limit):
             break
-#         print(sent_strength.items())
-
-#     print(sent_stength.items())
-
-    for i in summary:
-        print(i)
-    return ' '.join(summary)
+            
+    return summary
 
 def dep_pattern(doc): #iterate through tokens to find subject + auxiliary + Root + object pattern
     for i in range(len(doc)):
