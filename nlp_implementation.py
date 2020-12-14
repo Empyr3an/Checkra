@@ -1,20 +1,17 @@
 import spacy
-nlp = spacy.load('en_core_web_sm')
 from spacy.symbols import ORTH, LEMMA
 from spacy import displacy
 from spacy.matcher import Matcher
 from spacy.tokenizer import Tokenizer
 from spacy.util import compile_prefix_regex, compile_infix_regex, compile_suffix_regex
-from spacy.tokens import Token, Span
+from spacy.tokens import Doc, Token, Span
 from spacy.lang.char_classes import ALPHA, ALPHA_LOWER, ALPHA_UPPER, CONCAT_QUOTES, LIST_ELLIPSES, LIST_ICONS
 import re
 from collections import Counter
 from string import punctuation
 import contractions
 import neuralcoref
-coref = neuralcoref.NeuralCoref(nlp.vocab)
 import pytextrank
-
 
 
 
@@ -47,11 +44,15 @@ def prevent_sbd(doc): #ending boundary detection in spacy https://github.com/exp
                 is_possessive = True
             elif token.text == '’s':
                 is_possessive = True
+        
+            
                 
         can_sbd = not (quote_open or dquote_open)
         if is_possessive==True:
             can_sbd = False
             is_possessive = False
+        if token.text == "called":
+            can_sbd = False
     return doc
 
 
@@ -76,16 +77,14 @@ def custom_tokenizer(nlp): #keeps hyphens together
                                 infix_finditer=infix_re.finditer,
                                 token_match=nlp.tokenizer.token_match,
                                 rules=nlp.Defaults.tokenizer_exceptions)
-nlp.tokenizer = custom_tokenizer(nlp)
 
-matcher = Matcher(nlp.vocab)
+
 
 quote_patterns = [
     [{"ORTH": "'"}, {'OP': '*'}, {"ORTH": "'"}], 
     [{'ORTH': '"'}, {'OP': '*'}, {'ORTH': '"'}]
 ]
 
-matcher.add('QUOTED', None, *quote_patterns)
 
 #TODO FIX … MESSING UP QUOTING
 def quote_marker(doc): #merges quotes into one token
@@ -109,13 +108,12 @@ irrelevant_clause_patterns=[
     [{'IS_PUNCT': True},{'IS_SPACE': True, 'OP': '?'},{'IS_ALPHA': True},{'IS_PUNCT': True}],
 ]
 
-matcher.add('IRRELEVANT', None, *irrelevant_clause_patterns)
+
 
 def irrelevant_marker(doc): #detects clauses with the word I
     
     matches = [i for i in matcher(doc) if nlp.vocab.strings[i[0]]=="IRRELEVANT"]
     cur = 0
-    print(matches)
     for sent in doc.sents:
         if len(sent)<7:
             for tok in sent:
@@ -123,7 +121,7 @@ def irrelevant_marker(doc): #detects clauses with the word I
     for i in matches:
         if i[1]>cur and len(doc[i[1]:i[2]])<7:
             span = doc[i[1]:i[2]]
-            if any([tok.text == "I" for tok in span]):
+            if any([tok.text == "I" or tok.text=="you" for tok in span]):
                 for tok in span:
                     tok._.irrelevant=True
             cur = i[2]
@@ -134,26 +132,47 @@ def irrelevant_marker(doc): #detects clauses with the word I
 Token.set_extension("irrelevant", default=False)
 Token.set_extension("partquote", default=False)
 Span.set_extension("quote", getter= lambda span: any(tok._.partquote for tok in span))
+Doc.set_extension("host", default=False)
+Doc.set_extension("guest", default=False)
 
 
+nlp = spacy.load('en_core_web_lg')
+coref = neuralcoref.NeuralCoref(nlp.vocab)
+nlp.tokenizer = custom_tokenizer(nlp)
+
+matcher = Matcher(nlp.vocab)
+matcher.add('QUOTED', None, *quote_patterns)
+matcher.add('IRRELEVANT', None, *irrelevant_clause_patterns)
 
 nlp.add_pipe(quote_marker, name='quotes', after="parser")  # add it right after the tokenizer
 nlp.add_pipe(irrelevant_marker, name='non-important', last=True)
 nlp.add_pipe(prevent_sbd, name='prevent-sbd', before='parser')
-nlp.add_pipe(coref, name='neuralcoref', after='ner')
-nlp.add_pipe(pytextrank.TextRank().PipelineComponent, name='textrank', after='neuralcoref')
+# nlp.add_pipe(coref, name='neuralcoref', after='ner')
+nlp.add_pipe(pytextrank.TextRank().PipelineComponent, name='textrank')
 
 
 
 
 def text_fix(text): #expands contractions, fixes quotations, possessive nouns use special character
-    text= contractions.fix(text).translate(str.maketrans({"‘":"'", "’":"'", "“":"\"", "”":"\""})).replace("\n", " ").replace("a.k.a.", "also known as").strip()
+    text = re.sub(r"\b(\w+)\s+\1\b", r"\1", text)
+    text = re.sub(r"\b(\w+ \w+)\s+\1\b", r"\1", text)
+    text = re.sub(r"\b(\w+ \w+)\s+\1\b", r"\1", text)
+    text = re.sub(r"\b(\w+ \w+)\s+\1\b", r"\1", text)
+    text = re.sub(r"\b(\w+ \w+ \w+)\s+\1\b", r"\1", text)
+    text = re.sub(r"\b(\w+ \w+ \w+ \w+)\s+\1\b", r"\1", text)
+    text = text.replace("you know, ","").replace(", you know","").replace("you know","").replace("I mean, ","")
+    
+    text = contractions.fix(text).translate(str.maketrans({"‘":"'", "’":"'", "“":"\"", "”":"\""})).replace("\n", " ").replace("a.k.a.", "also known as")
+    text = re.sub(" like,",r"", text)
     return re.sub(r"([a-z])'s",r"\1’s", text)
 
-allraw = nlp(text_fix(open("text_files/all.txt").read()))
-
-
-
+def make_doc(name):
+    doc = nlp(text_fix(open(name).read()))
+    name = nlp(" ".join(re.split("[_/-]",name)))
+    ents = list([ent for ent in name.ents if ent.label_ == "PERSON"])
+    doc._.host = ents[0].text.title()
+    doc._.guest = ents[1].text.title()
+    return doc
 
 def possessive_nouns(doc): #returns list of possessive nouns
     for word in doc:
