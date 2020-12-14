@@ -10,7 +10,7 @@ import re
 from collections import Counter
 from string import punctuation
 import contractions
-import neuralcoref
+
 import pytextrank
 
 
@@ -127,7 +127,7 @@ def irrelevant_marker(doc): #detects clauses with the word I
             cur = i[2]
     return doc
 
-
+# import 
 
 Token.set_extension("irrelevant", default=False)
 Token.set_extension("partquote", default=False)
@@ -137,7 +137,7 @@ Doc.set_extension("guest", default=False)
 
 
 nlp = spacy.load('en_core_web_lg')
-coref = neuralcoref.NeuralCoref(nlp.vocab)
+
 nlp.tokenizer = custom_tokenizer(nlp)
 
 matcher = Matcher(nlp.vocab)
@@ -147,11 +147,15 @@ matcher.add('IRRELEVANT', None, *irrelevant_clause_patterns)
 nlp.add_pipe(quote_marker, name='quotes', after="parser")  # add it right after the tokenizer
 nlp.add_pipe(irrelevant_marker, name='non-important', last=True)
 nlp.add_pipe(prevent_sbd, name='prevent-sbd', before='parser')
-# nlp.add_pipe(coref, name='neuralcoref', after='ner')
+
 nlp.add_pipe(pytextrank.TextRank().PipelineComponent, name='textrank')
 
 
+import neuralcoref
+coref = neuralcoref.NeuralCoref(nlp.vocab)
+nlp.add_pipe(coref, name='neuralcoref', after='ner')
 
+# from neuralcoref import Coref
 
 def text_fix(text): #expands contractions, fixes quotations, possessive nouns use special character
     text = re.sub(r"\b(\w+)\s+\1\b", r"\1", text)
@@ -170,8 +174,11 @@ def make_doc(name):
     doc = nlp(text_fix(open(name).read()))
     name = nlp(" ".join(re.split("[_/-]",name)))
     ents = list([ent for ent in name.ents if ent.label_ == "PERSON"])
-    doc._.host = ents[0].text.title()
-    doc._.guest = ents[1].text.title()
+    
+    if len(ents)==1:
+        doc.user_data["host"] = nlp(ents[0].text.title())
+    if len(ents) > 1:
+        doc.user_data["guest"]= nlp(ents[1].text.title())
     return doc
 
 def possessive_nouns(doc): #returns list of possessive nouns
