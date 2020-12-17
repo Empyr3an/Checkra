@@ -122,7 +122,7 @@ def is_book1(name, df=books_df): #worker
         pass
 
     if db or wiki:
-        print(name)
+#         print(name)
         return(name, True)
 #     links = search(name)
 #     websites_matched = 0
@@ -155,7 +155,7 @@ def keep_ents(doc):
         elif label=="LOC" or label=="GPE": #save location entites
             places.append(ent)
     #parallel processing to verify books
-    with concurrent.futures.ThreadPoolExecutor(max_workers = 20) as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers = 30) as executor:
         result = [executor.submit(is_book1, e[0]) for e in ents if e[1] in potential]
     for future in concurrent.futures.as_completed(result):
 #         print(future.result())
@@ -197,7 +197,6 @@ def att_to_csv(docs, atts):
             all_attributes[str2] = toRemove+toKeep
             
         i+=1
-        !
     new_dic = {} #reverse dict so that given any name, can find base
     for k,v in all_attributes.items():
         for x in v:
