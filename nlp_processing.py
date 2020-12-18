@@ -1,16 +1,6 @@
 
 books_df = pd.read_csv('csvs/books_clean.csv')
 
-def write_specific(main, url, folder): #given url to main webpage, title to specific podcast, and folder destination, extracts all text
-    soup = BeautifulSoup(requests.get(main+url).text, "html.parser")
-    epi_name = re.split(" – |: ",soup.find("h1").text)
-    transcript_text = soup.find(class_="hsp-episode-transcript-body")
-    if not os.path.exists(folder):
-        os.makedirs(folder)
-        
-    with open(str(folder+"/"+"|".join(epi_name).replace(" ", "_")+".txt"), "w+") as w:
-        for para in transcript_text.find_all(class_="hsp-paragraph"):
-            w.write(contractions.fix(para.text.split(" ",1)[1]+"\n")) #write with expanded contractions
 
 
 def summarize(doc): #method to save each document summary of most important sentences
@@ -66,14 +56,14 @@ def folder_to_filelist(folder):
     return [(text_fix(open(folder+"/"+f).read()), f) for f in listdir(folder) if isfile(join(folder, f))]#list of all podcast files
 
 
-def make_doc(name): #custom doc init with user attributes from file output for only one doc
-    doc = nlp(text_fix(open(name).read()))
-    name = nlp(" ".join(re.split("[._/-]",name)[2:-1]))
-    ents = list([ent for ent in name.ents if ent.label_ == "PERSON"])
-    doc.user_data["host"] = nlp("Lex Fridman")
-    doc.user_data["guest"]= nlp(ents[0].text.title())
-#     print("made", ents[0].text.title()) #check to see if object is made and stored
-    return doc
+# def make_doc(name): #custom doc init with user attributes from file output for only one doc
+#     doc = nlp(text_fix(open(name).read()))
+#     name = nlp(" ".join(re.split("[._/-]",name)[2:-1]))
+#     ents = list([ent for ent in name.ents if ent.label_ == "PERSON"])
+#     doc.user_data["host"] = nlp("Lex Fridman")
+#     doc.user_data["guest"]= nlp(ents[0].text.title())
+# #     print("made", ents[0].text.title()) #check to see if object is made and stored
+#     return doc
 
 
 def is_book1(name, df=books_df): #worker
