@@ -33,7 +33,7 @@ import wikipedia
 from googlesearch import search
 
 
-books_df = pd.read_csv('books_clean.csv')
+books_df = pd.read_csv('csvs/books_clean.csv')
 
 def write_specific(main, url, folder): #given url to main webpage, title to specific podcast, and folder destination, extracts all text
     soup = BeautifulSoup(requests.get(main+url).text, "html.parser")
