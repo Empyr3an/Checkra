@@ -60,8 +60,21 @@ def p_all_topics(lda_model):
     for idx, topic in lda_model.print_topics(-1):
         print('Topic: {} \nWords: {}'.format(idx, topic))
 
+def load_confidences(file, topic_size, dictionary, model, sents):
+    top_confi = np.zeros([int(pod_word_count(file)/topic_size), len(sents)])
 
+    for i in range(len(sents)):
+        bow_vector=dictionary.doc2bow(preprocess(sents[i].text))
+        for topic in sorted(model[bow_vector], key=lambda tup: -1*tup[1])[:1]:
+            if topic[1]>.55:
+                top_confi[topic[0]][i] = topic[1]
+    return top_confi
 
+def print_sent_confi(sents, model, begin, end):
+    
+    for i in range(begin, end):
+        arr = np.array(sorted(model[dictionary.doc2bow(preprocess(sents[i].text))], key=lambda tup: -1*tup[1])[:3])
+        print(i, [list(arr[i]) for i in range(len(arr)) if arr[i][1]>.3])
 
 
 
