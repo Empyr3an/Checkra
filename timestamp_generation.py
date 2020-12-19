@@ -60,14 +60,40 @@ def p_all_topics(lda_model):
     for idx, topic in lda_model.print_topics(-1):
         print('Topic: {} \nWords: {}'.format(idx, topic))
 
-def load_confidences(file, topic_size, dictionary, model, sents):
+def load_confidences(file, topic_size, dictionary, model, sents, method=lambda a: a):
     top_confi = np.zeros([int(pod_word_count(file)/topic_size), len(sents)])
 
     for i in range(len(sents)):
         bow_vector=dictionary.doc2bow(preprocess(sents[i].text))
-        for topic in sorted(model[bow_vector], key=lambda tup: -1*tup[1])[:1]:
-            if topic[1]>.55:
-                top_confi[topic[0]][i] = topic[1]
+        sent_pred = sorted(model[bow_vector], key=lambda tup: -1*tup[1])[0]
+        if sent_pred[1]>.55:
+            top_confi[sent_pred[0]][i] = sent_pred[1]
+    return method(top_confi)
+
+def basic_completion(top_confi):
+    one_topic_confi = np.empty((len(sents), 2)) #extract main topic per sentence, keep only confident sentences
+    for i in range(len(sents)):
+        cur = [(ind,j) for ind, j in enumerate(top_confi[:,i]) if j>.55]
+        if not cur:
+            one_topic_confi[i]=np.array((-1,-1))
+        else: 
+            one_topic_confi[i]=np.array((cur[0]))
+    # #     one_topic_confi
+    #     print([(ind,j) for ind, j in enumerate(top_confi[:,i]) if j>.55])
+    for ind, i in enumerate(one_topic_confi): #basic
+        if np.array_equal(i, [-1,-1]):
+#             print(i)
+            neighborhood = np.array([arr for arr in one_topic_confi[max(0, ind-3):min(len(sents), ind+3)] if arr[0]!=-1])
+#             print(ind, neighborhood[:,0],stats.mode(neighborhood[:,0])[0])
+            conf_neigh = np.array([arr[1] for arr in one_topic_confi[max(0, ind-3):min(len(sents), ind+3)] if arr[0]==stats.mode(neighborhood[:,0])[0]])
+#             print(ind, conf_neigh,np.average(conf_neigh))
+            one_topic_confi[ind] = np.array([int(stats.mode(neighborhood[:,0])[0]), np.average(conf_neigh)])
+    #         print("set", np.array([int(stats.mode(neighborhood[:,0])[0]), np.average(conf_neigh)]))
+#             print(one_topic_confi[ind], "\n")
+
+    for ind, i in enumerate(one_topic_confi):
+        top_confi[int(i[0])][ind] = i[1]
+#     print(i[0])
     return top_confi
 
 def print_sent_confi(sents, model, begin, end):
