@@ -37,7 +37,6 @@ def preprocess(text): #removing useless words
     return result
 
 
-
 def parallel_process(podcast): #concurrent podcast normalization
     with concurrent.futures.ProcessPoolExecutor() as executor:
         processed_podcast = list(executor.map(preprocess, podcast))
@@ -96,15 +95,7 @@ def basic_completion(top_con):
     
     return top_con
 
-def to_graph_format(top_count, file, topic_size):
-    top_confi = np.zeros([int(pod_word_count(file)/topic_size), len(top_count)])
 
-    for i in range(len(top_count)):
-        cur = top_count[i]
-        top_confi[int(cur[0])][i] = cur[1]
-
-
-# def get_time_breaks(file,)
 
 def print_sent_confi(sents, model, begin, end):
     
@@ -113,7 +104,47 @@ def print_sent_confi(sents, model, begin, end):
         print(i, [list(arr[i]) for i in range(len(arr)) if arr[i][1]>.55])
 
 
+def get_algo_timestamps(sents):
+    streaming = np.empty(len(sents))
+    algo_timestamps = np.zeros(len(sents))
+    count=0
+    for i in range(len(sents)):
+        streaming[i] = int(stats.mode(one_topic_confi[:,0][max(0, i-15):min(len(streaming)-1, i+15)])[0])
+        if streaming[i] != streaming[i-1]:
+            count+=1
+            algo_timestamps[i] = 1
+#             print(i, int(stats.mode(one_topic_confi[:,0][max(0, i-15):min(len(streaming)-1, i+15)])[0]))
+    #     print(i, int(stats.mode(one_topic_confi[:,0][max(0,i-10):min(len(sents),i+10)])[0]))
+#     print(count)
+    return algo_timestamps
 
+def get_real_timestamps(soup, sents, timesfolder, file):
+    texts = list([para for para in soup.find(class_="hsp-episode-transcript-body").find_all(class_="hsp-paragraph")])
+
+    with open(timesfolder+file, "r") as r:#scraped timestamps
+        chapters = [line.split(" - ")[0] for line in r.readlines()[1:]]
+#     print(chapters)        
+    breaks = []
+    i,j=0,0
+    timestamp_array = np.zeros([len(sents), 1])
+    while i<len(chapters):
+        while j<len(texts):
+            j+=1
+            if int(texts[j].get("title").split(" ")[2])> convert_time(chapters[i]): #reach time greater than the timestamp, marks a new topic and must save
+                breaks.append(contractions.fix(texts[j].text.split(" ",1)[1])) #save paragraph of new topic
+                break
+        i+=1
+
+    i, j = 0, 0
+    while i < len(breaks):
+        while j<len(sents)-1:
+            j+=1
+            if sents[j] in breaks[i]:
+                timestamp_array[j] = 1
+#                 print(j)
+                break
+        i+=1
+    return timestamp_array
 
 
 def text_fix(text): #expands contractions, fixes quotations, possessive nouns use special character
