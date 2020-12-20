@@ -60,47 +60,57 @@ def p_all_topics(lda_model):
     for idx, topic in lda_model.print_topics(-1):
         print('Topic: {} \nWords: {}'.format(idx, topic))
 
+        
+        
+        
+        
+        
+        
 def load_confidences(file, topic_size, dictionary, model, sents, method=lambda a: a):
-    top_confi = np.zeros([int(pod_word_count(file)/topic_size), len(sents)])
-
-    for i in range(len(sents)):
-        bow_vector=dictionary.doc2bow(preprocess(sents[i].text))
+#     top_confi = np.zeros([int(pod_word_count(file)/topic_size), len(sents)])
+    one_topic_confi = np.zeros((len(sents), 2))
+    for i in range(len(one_topic_confi)):
+        bow_vector=dictionary.doc2bow(preprocess(sents[i]))
         sent_pred = sorted(model[bow_vector], key=lambda tup: -1*tup[1])[0]
         if sent_pred[1]>.55:
-            top_confi[sent_pred[0]][i] = sent_pred[1]
-    return method(top_confi)
+            one_topic_confi[i] = np.array(sent_pred)
+        else:
+            one_topic_confi[i] = np.array([-1,-1])
+    return method(one_topic_confi)
 
-def basic_completion(top_confi):
-    one_topic_confi = np.empty((len(sents), 2)) #extract main topic per sentence, keep only confident sentences
-    for i in range(len(sents)):
-        cur = [(ind,j) for ind, j in enumerate(top_confi[:,i]) if j>.55]
-        if not cur:
-            one_topic_confi[i]=np.array((-1,-1))
-        else: 
-            one_topic_confi[i]=np.array((cur[0]))
-    # #     one_topic_confi
-    #     print([(ind,j) for ind, j in enumerate(top_confi[:,i]) if j>.55])
-    for ind, i in enumerate(one_topic_confi): #basic
+def basic_completion(top_con):
+ 
+    for ind, i in enumerate(top_con): 
         if np.array_equal(i, [-1,-1]):
-#             print(i)
-            neighborhood = np.array([arr for arr in one_topic_confi[max(0, ind-3):min(len(sents), ind+3)] if arr[0]!=-1])
-#             print(ind, neighborhood[:,0],stats.mode(neighborhood[:,0])[0])
-            conf_neigh = np.array([arr[1] for arr in one_topic_confi[max(0, ind-3):min(len(sents), ind+3)] if arr[0]==stats.mode(neighborhood[:,0])[0]])
-#             print(ind, conf_neigh,np.average(conf_neigh))
-            one_topic_confi[ind] = np.array([int(stats.mode(neighborhood[:,0])[0]), np.average(conf_neigh)])
-    #         print("set", np.array([int(stats.mode(neighborhood[:,0])[0]), np.average(conf_neigh)]))
-#             print(one_topic_confi[ind], "\n")
+            nhood = np.array([a for a in top_con[max(0, ind-3):min(len(sents), ind+3)] if a[0]!=-1]) #points around a empty point
+            conf_neigh = np.array([a[1] for a in top_con[max(0, ind-3):min(len(sents), ind+3)] if a[0]==stats.mode(nhood[:,0])[0]]) #confidences of revelavent neighborhood points
+            top_con[ind] = np.array([int(stats.mode(nhood[:,0])[0]), np.average(conf_neigh)]) #set empty point to avg of points
+            
+            
+    for ind, i in enumerate(top_con): 
+        if i[0]!= top_con[max(0, ind-1)][0] or i[0]!= top_con[min(len(sents)-1, ind+1)][0]: #if sent topic is not equal to one of its sides
+            neigh_mode = top_con[max(0, ind-3):min(len(sents), ind+3)+1] #neighborhood of irregular sent
+            if i[0]!=stats.mode(neigh_mode[:,0])[0] and np.count_nonzero(neigh_mode[:,0] == stats.mode(neigh_mode[:,0])[0])>3: #if there is a clear mode in neighborhood, and if element is not in the mode
+                conf_neigh = np.array([arr[1] for arr in neigh_mode if arr[0]==stats.mode(neigh_mode[:,0])[0]]) #confidences of neighborhood mode
+                top_con[ind] = np.array([stats.mode(neigh_mode[:,0])[0],np.average(conf_neigh)]) #sent sentence topic equal to mode topic and confidence of mode topic
+    
+    return top_con
 
-    for ind, i in enumerate(one_topic_confi):
-        top_confi[int(i[0])][ind] = i[1]
-#     print(i[0])
-    return top_confi
+def to_graph_format(top_count, file, topic_size):
+    top_confi = np.zeros([int(pod_word_count(file)/topic_size), len(top_count)])
+
+    for i in range(len(top_count)):
+        cur = top_count[i]
+        top_confi[int(cur[0])][i] = cur[1]
+
+
+# def get_time_breaks(file,)
 
 def print_sent_confi(sents, model, begin, end):
     
     for i in range(begin, end):
         arr = np.array(sorted(model[dictionary.doc2bow(preprocess(sents[i].text))], key=lambda tup: -1*tup[1])[:3])
-        print(i, [list(arr[i]) for i in range(len(arr)) if arr[i][1]>.3])
+        print(i, [list(arr[i]) for i in range(len(arr)) if arr[i][1]>.55])
 
 
 
