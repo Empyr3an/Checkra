@@ -1,17 +1,16 @@
 #text normalization
 
-def podcast_to_collection(name, wpm): #given complete podcast path, splits into chunks of wpm and returns list
+def podcast_to_collection(name, wpm): #given path to file, splits into chunks of size wpm and returns the list
     complete_podcast=""
     with open(name, "r") as r:
         lines = r.readlines()
         for line in lines:
             complete_podcast+=(line.strip())
     complete_podcast = complete_podcast.split(" ")
-    complete_podcast = [" ".join(complete_podcast[i:(i+wpm)]) for i in range(0, len(complete_podcast), wpm)]
-    return complete_podcast
+    return [" ".join(complete_podcast[i:(i+wpm)]) for i in range(0, len(complete_podcast), wpm)]
 
 
-def pod_word_count(file): #returns number of words, 
+def pod_word_count(file): #returns number of words in a file
     with open(file, "r") as r:
         return int(len(r.read().split(" ")))
 
@@ -43,90 +42,119 @@ def parallel_process(podcast): #concurrent podcast normalization
     return processed_podcast
 
 
-def generate_model(file, doc_size, top_size):
+def generate_model(file, doc_size, top_size): #generate LDA model and dictionary
     wordcount = pod_word_count(file)
     processed_pod = parallel_process(podcast_to_collection(file, doc_size)) #break podcast into documents of 500 words, and return normalized documents
     
     dictionary = gensim.corpora.Dictionary(processed_pod) #create dictionary for words
     dictionary.filter_extremes(no_below=2, no_above=0.5, keep_n=100000) 
     bow_corpus = [dictionary.doc2bow(doc) for doc in processed_pod] #dict for how many times each word appears
-
-    lda_model = gensim.models.LdaMulticore(bow_corpus, num_topics=int(wordcount/top_size), id2word=dictionary, passes=8)
+    
+    lda_model = gensim.models.LdaMulticore(bow_corpus, num_topics=int(wordcount/top_size), id2word=dictionary, passes=4)
 
     return dictionary, lda_model
 
-def p_all_topics(lda_model):
-    for idx, topic in lda_model.print_topics(-1):
-        print('Topic: {} \nWords: {}'.format(idx, topic))
 
-        
-        
-        
-        
-        
-        
-def load_confidences(file, topic_size, dictionary, model, sents, method=lambda a: a):
-#     top_confi = np.zeros([int(pod_word_count(file)/topic_size), len(sents)])
+def load_confidences(file, topic_size, dictionary, model, sents, method=lambda a: a):#generates array with topic & confidence for each sentence
     one_topic_confi = np.zeros((len(sents), 2))
     for i in range(len(one_topic_confi)):
         bow_vector=dictionary.doc2bow(preprocess(sents[i]))
         sent_pred = sorted(model[bow_vector], key=lambda tup: -1*tup[1])[0]
-        if sent_pred[1]>.55:
+        if sent_pred[1]>.6: #adds only very confidence sentences to list
             one_topic_confi[i] = np.array(sent_pred)
         else:
             one_topic_confi[i] = np.array([-1,-1])
     return method(one_topic_confi)
 
 def basic_completion(top_con):
- 
-    for ind, i in enumerate(top_con): 
-        if np.array_equal(i, [-1,-1]):
-            nhood = np.array([a for a in top_con[max(0, ind-3):min(len(sents), ind+3)] if a[0]!=-1]) #points around a empty point
-            conf_neigh = np.array([a[1] for a in top_con[max(0, ind-3):min(len(sents), ind+3)] if a[0]==stats.mode(nhood[:,0])[0]]) #confidences of revelavent neighborhood points
-            top_con[ind] = np.array([int(stats.mode(nhood[:,0])[0]), np.average(conf_neigh)]) #set empty point to avg of points
-            
-            
-    for ind, i in enumerate(top_con): 
-        if i[0]!= top_con[max(0, ind-1)][0] or i[0]!= top_con[min(len(sents)-1, ind+1)][0]: #if sent topic is not equal to one of its sides
-            neigh_mode = top_con[max(0, ind-3):min(len(sents), ind+3)+1] #neighborhood of irregular sent
-            if i[0]!=stats.mode(neigh_mode[:,0])[0] and np.count_nonzero(neigh_mode[:,0] == stats.mode(neigh_mode[:,0])[0])>3: #if there is a clear mode in neighborhood, and if element is not in the mode
+
+    i = 0
+    while i <len(top_con):
+#         print("\t\t\t\t",i, top_con[i], top_con[max(0, i-1)][0], top_con[min(len(sents)-1, i+1)][0])
+        if np.array_equal(top_con[i], [-1,-1]): #if element is empty
+
+            nhood = np.array([a for a in top_con[max(0, i-3):min(len(sents), i+3)] if a[0]!=-1]) #6 points around a empty point
+            conf_neigh = np.array([a[1] for a in top_con[max(0, i-3):min(len(sents), i+3)] if a[0]==stats.mode(nhood[:,0])[0]]) #confidences of revelavent neighborhood points
+            top_con[i] = np.array([int(stats.mode(nhood[:,0])[0]), np.average(conf_neigh)]) #set empty point to avg of points
+#             print(" ",i, top_con[i])
+        i+=1
+    i=0
+#     print("\n")
+    while i<len(top_con):
+#         print("\t\t\t\t",i, top_con[i], top_con[max(0, i-1)][0], top_con[min(len(sents)-1, i+1)][0])
+        if top_con[i][0] != top_con[max(0, i-1)][0] or top_con[i][0]!= top_con[min(len(sents)-1, i+1)][0]: #if sent topic not equal to both sides
+            neigh_mode = top_con[max(0, i-3):min(len(sents), i+3)] #neighborhood of irregular sent
+#             print(neigh_mode[])
+#             print(i, top_con[i][0], stats.mode(neigh_mode[:,0])[0], np.count_nonzero(neigh_mode[:,0] == stats.mode(neigh_mode[:,0])[0]))
+            if top_con[i][0]!=stats.mode(neigh_mode[:,0])[0] and np.count_nonzero(neigh_mode[:,0] == stats.mode(neigh_mode[:,0])[0])>3:
                 conf_neigh = np.array([arr[1] for arr in neigh_mode if arr[0]==stats.mode(neigh_mode[:,0])[0]]) #confidences of neighborhood mode
-                top_con[ind] = np.array([stats.mode(neigh_mode[:,0])[0],np.average(conf_neigh)]) #sent sentence topic equal to mode topic and confidence of mode topic
-    
+                top_con[i] = np.array([stats.mode(neigh_mode[:,0])[0],np.average(conf_neigh)]) #sent sentence topic equal to mode topic and confidence of mode topic
+#                 print("",i, top_con[i])
+        i+=1  
     return top_con
 
-
-
-def print_sent_confi(sents, model, begin, end):
+def really_basic(top_con): #fills in unsure sentences with mean and a confidence
     
-    for i in range(begin, end):
-        arr = np.array(sorted(model[dictionary.doc2bow(preprocess(sents[i].text))], key=lambda tup: -1*tup[1])[:3])
-        print(i, [list(arr[i]) for i in range(len(arr)) if arr[i][1]>.55])
+    for ind, i in enumerate(top_con):
+        if np.array_equal(i, [-1,-1]):
+            top_con[ind] = np.array([int(stats.mode(top_con[:,0])[0]), .6])
+    return top_con
+            
 
-
-def get_algo_timestamps(sents):
-    streaming = np.empty(len(sents))
-    algo_timestamps = np.zeros(len(sents))
-    count=0
-    for i in range(len(sents)):
-        streaming[i] = int(stats.mode(one_topic_confi[:,0][max(0, i-15):min(len(streaming)-1, i+15)])[0])
-        if streaming[i] != streaming[i-1]:
+def get_algo_timestamps(one_topic_confi): #returns array of long chains of topics after smoothing
+    stream_data = []
+    i, start, count = 0,0,0
+    while i<len(one_topic_confi)-1: #collect records of topics occuring in order
+        cur_topic = one_topic_confi[i][0]
+        if cur_topic ==one_topic_confi[i+1][0]:
             count+=1
-            algo_timestamps[i] = 1
-#             print(i, int(stats.mode(one_topic_confi[:,0][max(0, i-15):min(len(streaming)-1, i+15)])[0]))
-    #     print(i, int(stats.mode(one_topic_confi[:,0][max(0,i-10):min(len(sents),i+10)])[0]))
-#     print(count)
-    return algo_timestamps
+        else:
+#             print(i, [cur_topic, count, [start, i]])
+            stream_data.append([cur_topic, count, [start, i]])
+            count=0
+            cur_topic=one_topic_confi[i+1][0]
+            start = i+1
+        i+=1
+    stream_data = [i for i in stream_data if i[1]>16] # filters out small topic chains to avoid noise
+    
+    i = 0
+    stream_data[0][2][0] = 0 #make first topic go from beginning of podcast
+    while i<len(stream_data)-1: #adjusts topic boundaries to fill in cleared spaced
+        if stream_data[i][2][1] !=stream_data[i+1][2][0]-1:
+#             print(stream_data[i], stream_data[i+1])
+            newcenter = (stream_data[i][2][1] + stream_data[i+1][2][0])//2
+            move_up = newcenter - stream_data[i][2][1]
+#             print("up", move_up)
 
-def get_real_timestamps(soup, sents, timesfolder, file):
+            stream_data[i][2][1] += move_up
+            stream_data[i][1] +=move_up
+
+            move_down = stream_data[i+1][2][0] - newcenter-1
+#             print("move_down", move_down)
+            stream_data[i+1][2][0]-= move_down
+            stream_data[i+1][1]-=move_down
+        i+=1
+    stamps = [[i[2][0], i[0]] for i in stream_data] #keep only first element and topic
+    return np.array(stamps).astype(int)
+
+def get_final_topic_confi(sents, stamps): #returns array of topics as seen in the given timestamps
+    final_topic_confi = np.empty(len(sents))
+    i = 0
+    while i<len(stamps)-1:
+        final_topic_confi[stamps[i][0]:stamps[i+1][0]] = stamps[i][1]
+        i+=1
+    final_topic_confi[stamps[-1][0]:] = stamps[-1][1]
+    return final_topic_confi
+
+
+def get_real_timestamps(soup, sents, timesfolder, file): #return timestamps from author
     texts = list([para for para in soup.find(class_="hsp-episode-transcript-body").find_all(class_="hsp-paragraph")])
 
     with open(timesfolder+file, "r") as r:#scraped timestamps
-        chapters = [line.split(" - ")[0] for line in r.readlines()[1:]]
-#     print(chapters)        
+        chapters = [line.split(" - ")[0] for line in r.readlines()]#store only times
+        
     breaks = []
     i,j=0,0
-    timestamp_array = np.zeros([len(sents), 1])
     while i<len(chapters):
         while j<len(texts):
             j+=1
@@ -136,15 +164,23 @@ def get_real_timestamps(soup, sents, timesfolder, file):
         i+=1
 
     i, j = 0, 0
-    while i < len(breaks):
-        while j<len(sents)-1:
+    timestamp_array = np.zeros([len(sents), 1])
+
+    while i < len(breaks): #iterate through break paragraphs, see if a sentence from the list is in that break
+        while j<len(sents)-1: #if so, that is an appropriate timestamp
             j+=1
             if sents[j] in breaks[i]:
                 timestamp_array[j] = 1
-#                 print(j)
                 break
         i+=1
-    return timestamp_array
+    return np.array([ind for ind, i in enumerate(timestamp_array) if i!=0])
+
+def convert_to_gra(stamps, sents): #converts array of timestamps to 1s at specific indices to be graphed
+    arr = np.zeros(len(sents))
+    for i in stamps:
+        arr[i] = 1
+    return arr
+
 
 
 def text_fix(text): #expands contractions, fixes quotations, possessive nouns use special character
