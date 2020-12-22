@@ -1,4 +1,5 @@
 #text normalization
+import logging
 
 def podcast_to_collection(name, wpm): #given path to file, splits into chunks of size wpm and returns the list
     complete_podcast=""
@@ -38,32 +39,42 @@ def preprocess(text): #removing useless words
 
 def parallel_process(podcast): #concurrent podcast normalization
     with concurrent.futures.ProcessPoolExecutor() as executor:
-        processed_podcast = list(executor.map(preprocess, podcast))
+        processed_podcast = list(executor.map(preprocess, podcast, chunksize=3))
     return processed_podcast
 
 
 def generate_model(file, doc_size, top_size): #generate LDA model and dictionary
     wordcount = pod_word_count(file)
     processed_pod = parallel_process(podcast_to_collection(file, doc_size)) #break podcast into documents of 500 words, and return normalized documents
-    
+#     print("paralleled")
     dictionary = gensim.corpora.Dictionary(processed_pod) #create dictionary for words
+#     print("made dict")
     dictionary.filter_extremes(no_below=2, no_above=0.5, keep_n=100000) 
     bow_corpus = [dictionary.doc2bow(doc) for doc in processed_pod] #dict for how many times each word appears
     
-    lda_model = gensim.models.LdaMulticore(bow_corpus, num_topics=int(wordcount/top_size), id2word=dictionary, passes=4)
-
+    lda_model = gensim.models.LdaModel(bow_corpus, num_topics=int(wordcount/top_size), id2word=dictionary,  passes=4)
+#     print("made model")
     return dictionary, lda_model
 
 
 def load_confidences(file, topic_size, dictionary, model, sents, method=lambda a: a):#generates array with topic & confidence for each sentence
     one_topic_confi = np.zeros((len(sents), 2))
+#     print("starting")
+#     print(len(one_topic_confi))
     for i in range(len(one_topic_confi)):
+#         print(i)
         bow_vector=dictionary.doc2bow(preprocess(sents[i]))
-        sent_pred = sorted(model[bow_vector], key=lambda tup: -1*tup[1])[0]
-        if sent_pred[1]>.6: #adds only very confidence sentences to list
-            one_topic_confi[i] = np.array(sent_pred)
-        else:
+#         print(bow_vector)
+        try:
+            sent_pred = sorted(model[bow_vector], key=lambda tup: -1*tup[1])[0]
+            if sent_pred[1]>.6: #adds only very confidence sentences to list
+                one_topic_confi[i] = np.array(sent_pred)
+            else:
+                one_topic_confi[i] = np.array([-1,-1])
+        except:
             one_topic_confi[i] = np.array([-1,-1])
+            
+
     return method(one_topic_confi)
 
 def basic_completion(top_con):
@@ -71,11 +82,18 @@ def basic_completion(top_con):
     i = 0
     while i <len(top_con):
 #         print("\t\t\t\t",i, top_con[i], top_con[max(0, i-1)][0], top_con[min(len(sents)-1, i+1)][0])
+        
         if np.array_equal(top_con[i], [-1,-1]): #if element is empty
 
             nhood = np.array([a for a in top_con[max(0, i-3):min(len(sents), i+3)] if a[0]!=-1]) #6 points around a empty point
-            conf_neigh = np.array([a[1] for a in top_con[max(0, i-3):min(len(sents), i+3)] if a[0]==stats.mode(nhood[:,0])[0]]) #confidences of revelavent neighborhood points
-            top_con[i] = np.array([int(stats.mode(nhood[:,0])[0]), np.average(conf_neigh)]) #set empty point to avg of points
+            try:
+                conf_neigh = np.array([a[1] for a in top_con[max(0, i-3):min(len(sents), i+3)] if a[0]==stats.mode(nhood[:,0])[0]]) #confidences of revelavent neighborhood points
+                top_con[i] = np.array([int(stats.mode(nhood[:,0])[0]), np.average(conf_neigh)])
+            except:
+                print(nhood)
+                print(top_con[i])
+                print(i)
+             #set empty point to avg of points
 #             print(" ",i, top_con[i])
         i+=1
     i=0
@@ -101,7 +119,7 @@ def really_basic(top_con): #fills in unsure sentences with mean and a confidence
     return top_con
             
 
-def get_algo_timestamps(one_topic_confi): #returns array of long chains of topics after smoothing
+def get_algo_timestamps(one_topic_confi, filter_size): #returns array of long chains of topics after smoothing
     stream_data = []
     i, start, count = 0,0,0
     while i<len(one_topic_confi)-1: #collect records of topics occuring in order
@@ -115,7 +133,7 @@ def get_algo_timestamps(one_topic_confi): #returns array of long chains of topic
             cur_topic=one_topic_confi[i+1][0]
             start = i+1
         i+=1
-    stream_data = [i for i in stream_data if i[1]>16] # filters out small topic chains to avoid noise
+    stream_data = [i for i in stream_data if i[1]>filter_size] # filters out small topic chains to avoid noise
     
     i = 0
     stream_data[0][2][0] = 0 #make first topic go from beginning of podcast
@@ -180,6 +198,26 @@ def convert_to_gra(stamps, sents): #converts array of timestamps to 1s at specif
     for i in stamps:
         arr[i] = 1
     return arr
+
+def sample_error(document_size):
+    filter_size = 16
+#     document_size = 1000
+    topic_size = 1700
+    main="https://www.happyscribe.com/public/lex-fridman-podcast-artificial-intelligence-ai/"
+    transfolder ="3Lex/"
+    timesfolder="lextimestamps2/"
+    url="101-joscha-bach-artificial-consciousness-and-the-nature-of-reality"
+    file = "#101|Joscha_Bach|Artificial_Consciousness_and_the_Nature_of_Reality.txt"
+#     print("starting", topic_size)
+    dictionary, model = generate_model(transfolder+file, document_size, topic_size)
+#     print("dict done")
+    one_topic_confi = load_confidences(transfolder+file, topic_size, dictionary, model, sents, basic_completion) #generate initial topics + confidences, then smooth by filling in empty values and averaging
+
+#     print("topic done")
+    algo_stamps = get_algo_timestamps(one_topic_confi, filter_size) #algo generated timestamps
+    actual_stamps = get_real_timestamps(soup, sents, timesfolder, file) #description generated timestamps
+    return (topic_size, len(algo_stamps)-len(actual_stamps))
+
 
 
 
