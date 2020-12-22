@@ -62,7 +62,7 @@ def folder_to_filelist(folder):
 #     ents = list([ent for ent in name.ents if ent.label_ == "PERSON"])
 #     doc.user_data["host"] = nlp("Lex Fridman")
 #     doc.user_data["guest"]= nlp(ents[0].text.title())
-# #     print("made", ents[0].text.title()) #check to see if object is made and stored
+#     print("made", ents[0].text.title()) #check to see if object is made and stored
 #     return doc
 
 
