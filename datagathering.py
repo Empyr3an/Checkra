@@ -1,3 +1,15 @@
+def update_transcripts(html_location,main):
+    headers = {'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/75.0.3770.142 Safari/537.36'}
+    soup = BeautifulSoup(open(html_location).read(), 'html.parser') #html for podcast channel
+    podcast_name = soup.find(class_="hsp-podcast-info").find("h1").text.replace(" ","_")
+#     with concurrent.futures.ThreadPoolExecutor(max_workers = 20) as executor:
+#         result = [executor.submit(write_specific, main, tag.attrs["href"], podcast_name) for tag in soup.find_all("a",class_="hsp-card-episode")]
+#     for tag in soup.find_all("a",class_="hsp-card-episode"):
+#         print(tag.attrs["href"])
+#     for future in concurrent.futures.as_completed(result):
+#         print(future.result())
+
+
 def write_specific(main, url, folder): #given url to main webpage, title to specific podcast, and folder destination, extracts all text
 #     print(main+url, folder)
     soup = BeautifulSoup(requests.get(main+url).text, "html.parser")
@@ -26,7 +38,24 @@ def mod_time(string):
     elif len(arr)==3:
         return str(int(arr[0]))+":"+str(int(arr[1])+1)+":"+str(int(arr[2]))
     
-   
+def folder_to_filelist(folder):
+    return [(text_fix(open(folder+"/"+f).read()), f) for f in listdir(folder) if isfile(join(folder, f))]#list of all podcast files
+
+
+def text_fix(text): #expands contractions, fixes quotations, possessive nouns use special character
+    text = re.sub(r"\b(\w+)\s+\1\b", r"\1", text) #delete repeated phrases, and unnecessary words
+    text = re.sub(r"\b(\w+ \w+)\s+\1\b", r"\1", text)
+    text = re.sub(r"\b(\w+ \w+)\s+\1\b", r"\1", text)
+    text = re.sub(r"\b(\w+ \w+ \w+)\s+\1\b", r"\1", text)
+    text = text.replace("you know, ","").replace(", you know","").replace("you know","").replace("I mean, ","").replace(" like,","")
+    
+    text = contractions.fix(text)
+    text = text.translate(str.maketrans({"‘":"'", "’":"'", "“":"\"", "”":"\""})).replace("\n", " ").replace("a.k.a.", "also known as")
+    return re.sub(r"([a-z])'s",r"\1’s", text)
+
+
+
+
 # scraping timestamp seperators
 # with open("Archive/text_files/htmlstuff.txt", "r") as r:
 #     soup = BeautifulSoup(r.read(), "html.parser")

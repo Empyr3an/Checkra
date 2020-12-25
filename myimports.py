@@ -27,7 +27,7 @@ from scipy import stats
 
 
 import wikipedia
-from googlesearch import search
+# from googlesearch import search
 import googleapiclient.discovery
 
 
@@ -59,6 +59,10 @@ from spacy.util import compile_prefix_regex, compile_infix_regex, compile_suffix
 from spacy.tokens import Doc, Token, Span
 from spacy.lang.char_classes import ALPHA, ALPHA_LOWER, ALPHA_UPPER, CONCAT_QUOTES, LIST_ELLIPSES, LIST_ICONS
 
+
+
+books_df = pd.read_csv('csvs/books_clean.csv')
+nlp = spacy.load('en_core_web_md')
 
 
 

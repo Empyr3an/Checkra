@@ -1,9 +1,4 @@
-
-books_df = pd.read_csv('csvs/books_clean.csv')
-
-
-
-def summarize(doc): #method to save each document summary of most important sentences
+def summarize(doc): #pipeline component to include summary for each doc processed
     keyword = []
     pos_tag = ['PROPN', 'ADJ', 'NOUN', 'VERB']
     for token in doc:
@@ -41,33 +36,13 @@ def summarize(doc): #method to save each document summary of most important sent
 
 
 
-def text_fix(text): #expands contractions, fixes quotations, possessive nouns use special character
-    text = re.sub(r"\b(\w+)\s+\1\b", r"\1", text) #delete repeated phrases, and unnecessary words
-    text = re.sub(r"\b(\w+ \w+)\s+\1\b", r"\1", text)
-    text = re.sub(r"\b(\w+ \w+)\s+\1\b", r"\1", text)
-    text = re.sub(r"\b(\w+ \w+ \w+)\s+\1\b", r"\1", text)
-    text = text.replace("you know, ","").replace(", you know","").replace("you know","").replace("I mean, ","").replace(" like,","")
-    
-    text = contractions.fix(text)
-    text = text.translate(str.maketrans({"‘":"'", "’":"'", "“":"\"", "”":"\""})).replace("\n", " ").replace("a.k.a.", "also known as")
-    return re.sub(r"([a-z])'s",r"\1’s", text)
-
-def folder_to_filelist(folder):
-    return [(text_fix(open(folder+"/"+f).read()), f) for f in listdir(folder) if isfile(join(folder, f))]#list of all podcast files
 
 
-# def make_doc(name): #custom doc init with user attributes from file output for only one doc
-#     doc = nlp(text_fix(open(name).read()))
-#     name = nlp(" ".join(re.split("[._/-]",name)[2:-1]))
-#     ents = list([ent for ent in name.ents if ent.label_ == "PERSON"])
-#     doc.user_data["host"] = nlp("Lex Fridman")
-#     doc.user_data["guest"]= nlp(ents[0].text.title())
-#     print("made", ents[0].text.title()) #check to see if object is made and stored
-#     return doc
+
+
 
 
 def is_book1(name, df=books_df): #worker
-#     print("trying", name)
     db, wiki, = False, False  
     if name in df.title.values:
         db = True
@@ -80,8 +55,9 @@ def is_book1(name, df=books_df): #worker
         pass
 
     if db or wiki:
-#         print(name)
         return(name, True)
+    #code for google checking books, current commented since it breaks api limits with concurrency
+    
 #     links = search(name)
 #     websites_matched = 0
 #     for l in links:
@@ -107,21 +83,20 @@ def keep_ents(doc):
     ents = doc.user_data["entis"]
     potential = ["WORK_OF_ART"]
     
-    for ent, label in ents:
-        if label=="PERSON": #save people entities
-            people.append(ent)
-        elif label=="LOC" or label=="GPE": #save location entites
-            places.append(ent)
+#     for ent, label in ents:
+#         if label=="PERSON": #save people entities
+#             people.append(ent)
+#         elif label=="LOC" or label=="GPE": #save location entites
+#             places.append(ent)
     #parallel processing to verify books
     with concurrent.futures.ThreadPoolExecutor(max_workers = 30) as executor:
         result = [executor.submit(is_book1, e[0]) for e in ents if e[1] in potential]
     for future in concurrent.futures.as_completed(result):
-#         print(future.result())
         if future.result()[1]==True:
             books.append(future.result()[0])
-    doc.user_data["places"] = places
-    doc.user_data["people"] = people
-    doc.user_data["books"] = books
+    doc.user_data["places"] = list(set([ent for ent,label in ents if label=="LOC" or label=="GPE"]))
+    doc.user_data["people"] = list(set([ent for ent,label in ents if label=="PERSON"]))
+    doc.user_data["books"] = list(set(books))
 #     doc.user_data["people"] = [person[0] for person in ents if person[1]=="PERSON"]
 #     doc.user_data["place"] = [place[0] for place in ents if place[1]=="LOC" or place[1]=="GPE"]
 #     doc.user_data["book"] = [book[0] for book in ents if book[1] in potential]
@@ -204,5 +179,3 @@ def att_to_csv(docs, atts):
 # conf = SparkConf().setAppName("pyspark-shell").setMaster('local[*]').set("spark.executor.memory", "10g").set("spark.driver.memory", "10g").set('spark.driver.maxResultSize', "10G")
 # sc = SparkContext(conf=conf)
     
-nlp = spacy.load('en_core_web_lg')
-nlp.add_pipe(summarize, name="summary", after="parser")
