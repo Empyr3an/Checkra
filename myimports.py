@@ -6,9 +6,12 @@ import re
 import json
 import csv
 import requests
+import urllib.request
+import urllib.parse
 from bs4 import BeautifulSoup, NavigableString
 from tqdm import tqdm
 from pprint import pprint
+import math
 
 import multiprocessing as mp
 import subprocess
@@ -29,6 +32,8 @@ from scipy import stats
 import wikipedia
 # from googlesearch import search
 import googleapiclient.discovery
+from youtube_search import YoutubeSearch
+
 
 
 #text mgmt and NLP packages
@@ -51,13 +56,19 @@ stemmer = SnowballStemmer('english')
 
 import spacy
 from spacy.tokens import DocBin
-from spacy.symbols import ORTH, LEMMA
-from spacy import displacy
-from spacy.matcher import Matcher
+# from spacy.symbols import ORTH, LEMMA
+# from spacy import displacy
+# from spacy.matcher import Matcher
 from spacy.tokenizer import Tokenizer
 from spacy.util import compile_prefix_regex, compile_infix_regex, compile_suffix_regex
 from spacy.tokens import Doc, Token, Span
-from spacy.lang.char_classes import ALPHA, ALPHA_LOWER, ALPHA_UPPER, CONCAT_QUOTES, LIST_ELLIPSES, LIST_ICONS
+# from spacy.lang.char_classes import ALPHA, ALPHA_LOWER, ALPHA_UPPER, CONCAT_QUOTES, LIST_ELLIPSES, LIST_ICONS
+
+
+
+#data storage
+import pymongo
+from pymongo import MongoClient
 
 
 

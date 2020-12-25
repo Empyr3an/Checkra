@@ -1,9 +1,8 @@
 def update_transcripts(html_location,main):
-    headers = {'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/75.0.3770.142 Safari/537.36'}
     soup = BeautifulSoup(open(html_location).read(), 'html.parser') #html for podcast channel
     podcast_name = soup.find(class_="hsp-podcast-info").find("h1").text.replace(" ","_")
-#     with concurrent.futures.ThreadPoolExecutor(max_workers = 20) as executor:
-#         result = [executor.submit(write_specific, main, tag.attrs["href"], podcast_name) for tag in soup.find_all("a",class_="hsp-card-episode")]
+    with concurrent.futures.ThreadPoolExecutor(max_workers = 20) as executor:
+        result = [executor.submit(write_specific, main, tag.attrs["href"], podcast_name) for tag in soup.find_all("a",class_="hsp-card-episode")]
 #     for tag in soup.find_all("a",class_="hsp-card-episode"):
 #         print(tag.attrs["href"])
 #     for future in concurrent.futures.as_completed(result):
@@ -11,15 +10,14 @@ def update_transcripts(html_location,main):
 
 
 def write_specific(main, url, folder): #given url to main webpage, title to specific podcast, and folder destination, extracts all text
-#     print(main+url, folder)
-    soup = BeautifulSoup(requests.get(main+url).text, "html.parser")
-#     print(soup.prettify)
+    mystr = urllib.request.urlopen(main+url).read().decode("utf8")
+    soup = BeautifulSoup(mystr, "html.parser")
     epi_name = re.split(" – |: ",soup.find("h1").text)
     transcript_text = soup.find(class_="hsp-episode-transcript-body")
     if not os.path.exists(folder):
         os.makedirs(folder)
         
-    with open(str(folder+"|".join(epi_name).replace(" ", "_")+".txt"), "w+") as w:
+    with open(str(folder+"/"+"|".join(epi_name).replace(" ", "_")+".txt"), "w+") as w:
         for para in transcript_text.find_all(class_="hsp-paragraph"):
             w.write(contractions.fix(para.text.split(" ",1)[1]+"\n")) #write with expanded contractions
 
@@ -54,8 +52,6 @@ def text_fix(text): #expands contractions, fixes quotations, possessive nouns us
     return re.sub(r"([a-z])'s",r"\1’s", text)
 
 
-
-
 # scraping timestamp seperators
 # with open("Archive/text_files/htmlstuff.txt", "r") as r:
 #     soup = BeautifulSoup(r.read(), "html.parser")
@@ -65,4 +61,8 @@ def text_fix(text): #expands contractions, fixes quotations, possessive nouns us
 #             to_scrape = epi.get("href")
 
 # main = "https://www.happyscribe.com" 
+
+
+#youtube search
+# results = YoutubeSearch('Love, Evolution, and the Human Brain Lisa Feldman Barrett', max_results=10).to_dict()
 

@@ -1,3 +1,5 @@
+
+
 def summarize(doc): #pipeline component to include summary for each doc processed
     keyword = []
     pos_tag = ['PROPN', 'ADJ', 'NOUN', 'VERB']
@@ -35,11 +37,7 @@ def summarize(doc): #pipeline component to include summary for each doc processe
     return doc
 
 
-
-
-
-
-
+nlp.add_pipe(summarize, last=True)
 
 
 def is_book1(name, df=books_df): #worker
@@ -78,29 +76,34 @@ def is_book1(name, df=books_df): #worker
     return (name, False)
 
 
+
 def keep_ents(doc):
     books, people, places = [], [], []
     ents = doc.user_data["entis"]
     potential = ["WORK_OF_ART"]
     
-#     for ent, label in ents:
-#         if label=="PERSON": #save people entities
-#             people.append(ent)
-#         elif label=="LOC" or label=="GPE": #save location entites
-#             places.append(ent)
+    doc.user_data["places"] = list(set([ent for ent,label in ents if label=="LOC" or label=="GPE"]))
+    doc.user_data["people"] = list(set([ent for ent,label in ents if label=="PERSON"]))
+        
     #parallel processing to verify books
     with concurrent.futures.ThreadPoolExecutor(max_workers = 30) as executor:
         result = [executor.submit(is_book1, e[0]) for e in ents if e[1] in potential]
     for future in concurrent.futures.as_completed(result):
         if future.result()[1]==True:
             books.append(future.result()[0])
-    doc.user_data["places"] = list(set([ent for ent,label in ents if label=="LOC" or label=="GPE"]))
-    doc.user_data["people"] = list(set([ent for ent,label in ents if label=="PERSON"]))
+    
     doc.user_data["books"] = list(set(books))
-#     doc.user_data["people"] = [person[0] for person in ents if person[1]=="PERSON"]
-#     doc.user_data["place"] = [place[0] for place in ents if place[1]=="LOC" or place[1]=="GPE"]
-#     doc.user_data["book"] = [book[0] for book in ents if book[1] in potential]
+    
     return doc
+
+nlp.add_pipe(keep_ents,name="filtered_ents", last=True)
+
+
+def all_ents(doc):
+    doc.user_data["entis"] = [(ent.text, ent.label_) for ent in doc.ents]
+    return doc
+
+nlp.add_pipe(all_ents, before="filtered_ents" )
 
 
 def att_to_csv(docs, atts):

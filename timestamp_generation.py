@@ -1,5 +1,6 @@
+from datagathering import text_fix
+import math
 #text normalization
-import logging
 
 def podcast_to_collection(name, wpm): #given path to file, splits into chunks of size wpm and returns the list
     complete_podcast=""
@@ -43,21 +44,18 @@ def parallel_process(podcast): #concurrent podcast normalization
     return processed_podcast
 
 
-def generate_model(file, doc_size, top_size): #generate LDA model and dictionary
+def generate_model(file, doc_size): #generate LDA model and dictionary
     wordcount = pod_word_count(file)
     processed_pod = parallel_process(podcast_to_collection(file, doc_size)) #break podcast into documents of 500 words, and return normalized documents
-#     print("paralleled")
     dictionary = gensim.corpora.Dictionary(processed_pod) #create dictionary for words
-#     print("made dict")
     dictionary.filter_extremes(no_below=2, no_above=0.5, keep_n=100000) 
     bow_corpus = [dictionary.doc2bow(doc) for doc in processed_pod] #dict for how many times each word appears
     
-    lda_model = gensim.models.LdaModel(bow_corpus, num_topics=int(wordcount/top_size), id2word=dictionary,  passes=4)
-#     print("made model")
+    lda_model = gensim.models.LdaModel(bow_corpus, num_topics=int(math.log(wordcount)), id2word=dictionary,  passes=4)
     return dictionary, lda_model
 
 
-def load_confidences(file, topic_size, dictionary, model, sents, method=lambda a: a):#generates array with topic & confidence for each sentence
+def load_confidences(file, dictionary, model, sents, method=lambda a: a):#generates array with topic & confidence for each sentence
     one_topic_confi = np.zeros((len(sents), 2))
 #     print("starting")
 #     print(len(one_topic_confi))
@@ -94,47 +92,35 @@ def basic_completion(top_con):
                 print(top_con[i])
                 print(i)
              #set empty point to avg of points
-#             print(" ",i, top_con[i])
         i+=1
     i=0
-#     print("\n")
+    
     while i<len(top_con):
-#         print("\t\t\t\t",i, top_con[i], top_con[max(0, i-1)][0], top_con[min(len(sents)-1, i+1)][0])
         if top_con[i][0] != top_con[max(0, i-1)][0] or top_con[i][0]!= top_con[min(len(sents)-1, i+1)][0]: #if sent topic not equal to both sides
             neigh_mode = top_con[max(0, i-3):min(len(sents), i+3)] #neighborhood of irregular sent
-#             print(neigh_mode[])
-#             print(i, top_con[i][0], stats.mode(neigh_mode[:,0])[0], np.count_nonzero(neigh_mode[:,0] == stats.mode(neigh_mode[:,0])[0]))
             if top_con[i][0]!=stats.mode(neigh_mode[:,0])[0] and np.count_nonzero(neigh_mode[:,0] == stats.mode(neigh_mode[:,0])[0])>3:
                 conf_neigh = np.array([arr[1] for arr in neigh_mode if arr[0]==stats.mode(neigh_mode[:,0])[0]]) #confidences of neighborhood mode
                 top_con[i] = np.array([stats.mode(neigh_mode[:,0])[0],np.average(conf_neigh)]) #sent sentence topic equal to mode topic and confidence of mode topic
-#                 print("",i, top_con[i])
         i+=1  
     return top_con
 
-def really_basic(top_con): #fills in unsure sentences with mean and a confidence
-    
-    for ind, i in enumerate(top_con):
-        if np.array_equal(i, [-1,-1]):
-            top_con[ind] = np.array([int(stats.mode(top_con[:,0])[0]), .6])
-    return top_con
             
 
-def get_algo_timestamps(one_topic_confi, filter_size): #returns array of long chains of topics after smoothing
+def get_algo_timestamps(one_topic_confi): #returns array of long chains of topics after smoothing
     stream_data = []
     i, start, count = 0,0,0
     while i<len(one_topic_confi)-1: #collect records of topics occuring in order
         cur_topic = one_topic_confi[i][0]
-        if cur_topic ==one_topic_confi[i+1][0]:
+        if cur_topic ==one_topic_confi[i+1][0]: #if same as previous
             count+=1
         else:
-#             print(i, [cur_topic, count, [start, i]])
-            stream_data.append([cur_topic, count, [start, i]])
+            stream_data.append([cur_topic, count, [start, i]]) #if not same, start new chain
             count=0
             cur_topic=one_topic_confi[i+1][0]
             start = i+1
         i+=1
-    stream_data = [i for i in stream_data if i[1]>filter_size] # filters out small topic chains to avoid noise
-    
+
+    stream_data = [i for i in stream_data if i[1]>(len(one_topic_confi)/80)] # filters out small topic chains to avoid noise
     i = 0
     stream_data[0][2][0] = 0 #make first topic go from beginning of podcast
     while i<len(stream_data)-1: #adjusts topic boundaries to fill in cleared spaced
@@ -150,7 +136,7 @@ def get_algo_timestamps(one_topic_confi, filter_size): #returns array of long ch
             move_down = stream_data[i+1][2][0] - newcenter-1
 #             print("move_down", move_down)
             stream_data[i+1][2][0]-= move_down
-            stream_data[i+1][1]-=move_down
+            stream_data[i+1][1]+=move_down
         i+=1
     stamps = [[i[2][0], i[0]] for i in stream_data] #keep only first element and topic
     return np.array(stamps).astype(int)
@@ -199,36 +185,31 @@ def convert_to_gra(stamps, sents): #converts array of timestamps to 1s at specif
         arr[i] = 1
     return arr
 
-def sample_error(document_size):
-    filter_size = 16
-#     document_size = 1000
-    topic_size = 1700
-    main="https://www.happyscribe.com/public/lex-fridman-podcast-artificial-intelligence-ai/"
-    transfolder ="3Lex/"
-    timesfolder="lextimestamps2/"
-    url="101-joscha-bach-artificial-consciousness-and-the-nature-of-reality"
-    file = "#101|Joscha_Bach|Artificial_Consciousness_and_the_Nature_of_Reality.txt"
-#     print("starting", topic_size)
-    dictionary, model = generate_model(transfolder+file, document_size, topic_size)
-#     print("dict done")
-    one_topic_confi = load_confidences(transfolder+file, topic_size, dictionary, model, sents, basic_completion) #generate initial topics + confidences, then smooth by filling in empty values and averaging
+# def sample_error(document_size):
+#     filter_size = 16
+# #     document_size = 1000
+#     topic_size = 1700
+#     main="https://www.happyscribe.com/public/lex-fridman-podcast-artificial-intelligence-ai/"
+#     transfolder ="3Lex/"
+#     timesfolder="lextimestamps2/"
+#     url="101-joscha-bach-artificial-consciousness-and-the-nature-of-reality"
+#     file = "#101|Joscha_Bach|Artificial_Consciousness_and_the_Nature_of_Reality.txt"
+# #     print("starting", topic_size)
+#     dictionary, model = generate_model(transfolder+file, document_size, topic_size)
+# #     print("dict done")
+#     one_topic_confi = load_confidences(transfolder+file, topic_size, dictionary, model, sents, basic_completion) #generate initial topics + confidences, then smooth by filling in empty values and averaging
 
-#     print("topic done")
-    algo_stamps = get_algo_timestamps(one_topic_confi, filter_size) #algo generated timestamps
-    actual_stamps = get_real_timestamps(soup, sents, timesfolder, file) #description generated timestamps
-    return (topic_size, len(algo_stamps)-len(actual_stamps))
-
-
+# #     print("topic done")
+#     algo_stamps = get_algo_timestamps(one_topic_confi, filter_size) #algo generated timestamps
+#     actual_stamps = get_real_timestamps(soup, sents, timesfolder, file) #description generated timestamps
+#     return (topic_size, len(algo_stamps)-len(actual_stamps))
 
 
-def text_fix(text): #expands contractions, fixes quotations, possessive nouns use special character
-    text = re.sub(r"\b(\w+)\s+\1\b", r"\1", text) #delete repeated phrases, and unnecessary words
-    text = re.sub(r"\b(\w+ \w+)\s+\1\b", r"\1", text)
-    text = re.sub(r"\b(\w+ \w+)\s+\1\b", r"\1", text)
-    text = re.sub(r"\b(\w+ \w+ \w+)\s+\1\b", r"\1", text)
-    text = text.replace("you know, ","").replace(", you know","").replace("you know","").replace("I mean, ","").replace(" like,","")
-    
-    text = contractions.fix(text)
-    text = text.translate(str.maketrans({"‘":"'", "’":"'", "“":"\"", "”":"\""})).replace("\n", " ").replace("a.k.a.", "also known as")
-    return re.sub(r"([a-z])'s",r"\1’s", text)
-
+def get_stamp_summaries(stamps, sents):
+    stamped_docs = []
+    i = 0
+    while i<len(stamps)-1:
+        stamped_docs.append(nlp(" ".join(sents[stamps[i][0]:algo_stamps[i+1][0]])))
+        i+=1
+    stamped_docs.append(nlp(" ".join(sents[stamps[-1][0]:])))
+    return stamped_docs
