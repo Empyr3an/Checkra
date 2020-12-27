@@ -1,5 +1,3 @@
-from datagathering import text_fix
-import math
 #text normalization
 
 def podcast_to_collection(name, wpm): #given path to file, splits into chunks of size wpm and returns the list
@@ -47,7 +45,7 @@ def parallel_process(podcast): #concurrent podcast normalization
 def generate_model(file, doc_size): #generate LDA model and dictionary
     wordcount = pod_word_count(file)
     processed_pod = parallel_process(podcast_to_collection(file, doc_size)) #break podcast into documents of 500 words, and return normalized documents
-    dictionary = gensim.corpora.Dictionary(processed_pod) #create dictionary for words
+    dictionary = gensim.corpora.Dictionary(processed_pod) #create dictionary for wordsZZ
     dictionary.filter_extremes(no_below=2, no_above=0.5, keep_n=100000) 
     bow_corpus = [dictionary.doc2bow(doc) for doc in processed_pod] #dict for how many times each word appears
     
@@ -76,7 +74,7 @@ def load_confidences(file, dictionary, model, sents, method=lambda a: a):#genera
     return method(one_topic_confi)
 
 def basic_completion(top_con):
-
+    sents = top_con[:,0]
     i = 0
     while i <len(top_con):
 #         print("\t\t\t\t",i, top_con[i], top_con[max(0, i-1)][0], top_con[min(len(sents)-1, i+1)][0])
@@ -88,9 +86,11 @@ def basic_completion(top_con):
                 conf_neigh = np.array([a[1] for a in top_con[max(0, i-3):min(len(sents), i+3)] if a[0]==stats.mode(nhood[:,0])[0]]) #confidences of revelavent neighborhood points
                 top_con[i] = np.array([int(stats.mode(nhood[:,0])[0]), np.average(conf_neigh)])
             except:
-                print(nhood)
-                print(top_con[i])
-                print(i)
+                for ind, i in enumerate(top_con[i-10:i+10]):
+                    print(ind, i)
+#                 print(nhood)
+#                 print(top_con[i])
+#                 print(i)
              #set empty point to avg of points
         i+=1
     i=0
@@ -119,6 +119,7 @@ def get_algo_timestamps(one_topic_confi): #returns array of long chains of topic
             cur_topic=one_topic_confi[i+1][0]
             start = i+1
         i+=1
+
 
     stream_data = [i for i in stream_data if i[1]>(len(one_topic_confi)/80)] # filters out small topic chains to avoid noise
     i = 0
@@ -205,11 +206,3 @@ def convert_to_gra(stamps, sents): #converts array of timestamps to 1s at specif
 #     return (topic_size, len(algo_stamps)-len(actual_stamps))
 
 
-def get_stamp_summaries(stamps, sents):
-    stamped_docs = []
-    i = 0
-    while i<len(stamps)-1:
-        stamped_docs.append(nlp(" ".join(sents[stamps[i][0]:algo_stamps[i+1][0]])))
-        i+=1
-    stamped_docs.append(nlp(" ".join(sents[stamps[-1][0]:])))
-    return stamped_docs

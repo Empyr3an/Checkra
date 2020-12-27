@@ -1,5 +1,4 @@
 
-
 def summarize(doc): #pipeline component to include summary for each doc processed
     keyword = []
     pos_tag = ['PROPN', 'ADJ', 'NOUN', 'VERB']
@@ -13,7 +12,7 @@ def summarize(doc): #pipeline component to include summary for each doc processe
     max_freq = Counter(keyword).most_common(1)[0][1] #frequency of most common word
     for w in freq_word:
         freq_word[w] = (freq_word[w]/max_freq)
-        
+    doc.user_data["keywords"] = [word[0] for word in freq_word.most_common(40)]    
     sent_strength={}
     for sent in doc.sents: #loop through each word in each sentence
         for word in sent:
@@ -27,7 +26,7 @@ def summarize(doc): #pipeline component to include summary for each doc processe
     sorted_x = sorted(sent_strength.items(), key=lambda kv: kv[1], reverse=True) #sort by strength of sentences
     for i in range(len(sorted_x)):
         if str(sorted_x[i][0]).capitalize() not in summary:
-            summary.append(str(sorted_x[i][0]).capitalize())
+            summary.append(str(sorted_x[i][0]).capitalize().strip())
 
         counter += 1
         if(counter >= 5):
@@ -37,8 +36,32 @@ def summarize(doc): #pipeline component to include summary for each doc processe
     return doc
 
 
-nlp.add_pipe(summarize, last=True)
+nlp.add_pipe(summarize,name="getsummary", last=True)
 
+
+
+
+def subtopics(doc):
+    sents = [sent.text for sent in doc.sents]
+    dictionary, model = generate_model("black.txt", 2700)
+    one_topic_confi = load_confidences("black.txt", dictionary, model, sents, basic_completion) #generate initial topics + confidences, then smooth by filling in empty values and averaging
+
+
+    stamps = get_algo_timestamps(one_topic_confi) #algo generated timestamps
+    process_subtopics = []
+    i = 0
+    with nlp.disable_pipes("getsubtopics", "getallents", "getfilteredents", "ner"):
+        while i<len(stamps)-1:
+            process_subtopics.append(nlp(" ".join(sents[stamps[i][0]:stamps[i+1][0]])))
+            i+=1
+        process_subtopics.append(nlp(" ".join(sents[stamps[-1][0]:])))
+    
+
+    doc.user_data["subtopics"] = [summ.user_data["summary"] for summ in process_subtopics]
+    
+    return doc
+
+nlp.add_pipe(subtopics, name="getsubtopics", after="getsummary")
 
 def is_book1(name, df=books_df): #worker
     db, wiki, = False, False  
@@ -75,7 +98,11 @@ def is_book1(name, df=books_df): #worker
     
     return (name, False)
 
+def all_ents(doc):
+    doc.user_data["entis"] = [(ent.text, ent.label_) for ent in doc.ents]
+    return doc
 
+nlp.add_pipe(all_ents, name="getallents", after= "getsubtopics")
 
 def keep_ents(doc):
     books, people, places = [], [], []
@@ -96,14 +123,12 @@ def keep_ents(doc):
     
     return doc
 
-nlp.add_pipe(keep_ents,name="filtered_ents", last=True)
+nlp.add_pipe(keep_ents,name="getfilteredents", after="getallents")
 
 
-def all_ents(doc):
-    doc.user_data["entis"] = [(ent.text, ent.label_) for ent in doc.ents]
-    return doc
 
-nlp.add_pipe(all_ents, before="filtered_ents" )
+
+
 
 
 def att_to_csv(docs, atts):
