@@ -1,4 +1,14 @@
+'''
+File adds following fields to doc.user_data:
 
+keywords
+complete summary
+index of which sentences start new topics
+count of number of sentences
+summaries of subtopics
+places, people, books
+
+'''
 def summarize(doc): #pipeline component to include summary for each doc processed
     keyword = []
     pos_tag = ['PROPN', 'ADJ', 'NOUN', 'VERB']
@@ -41,14 +51,15 @@ nlp.add_pipe(summarize,name="getsummary", last=True)
 
 def subtopics(doc):
     sents = [sent.text for sent in doc.sents]
-    dictionary, model = generate_model("black.txt", 2700)
-    one_topic_confi = load_confidences("black.txt", dictionary, model, sents, basic_completion) #generate initial topics + confidences, then smooth by filling in empty values and averaging
-
+    dictionary, model = generate_model(doc.text, 2700)
+    one_topic_confi = load_confidences(doc.text, dictionary, model, sents, basic_completion) #generate initial topics + confidences, then smooth by filling in empty values and averaging
 
     stamps = get_algo_timestamps(one_topic_confi) #algo generated timestamps
+    doc.user_data["stamps"] = stamps
+    doc.user_data["sent_count"] = len(sents)
     process_subtopics = []
     i = 0
-    with nlp.disable_pipes("getsubtopics", "getallents", "ner"): #"getfilteredents",
+    with nlp.disable_pipes("getsubtopics", "getallents", "ner", "getfilteredents"): #
         while i<len(stamps)-1:
             process_subtopics.append(nlp(" ".join(sents[stamps[i][0]:stamps[i+1][0]])))
             i+=1
@@ -61,9 +72,9 @@ def subtopics(doc):
 
 nlp.add_pipe(subtopics, name="getsubtopics", after="getsummary")
 
-def is_book(name, df=books_df): #worker
+def is_book(name): #worker, takes in entity name and database
     db, wiki, = False, False  
-    if name in df.title.values:
+    if name in books_df.title.values:
         db = True
     similar = ["book", "volume", "novel", "work", "publication", "title", "treatise", "thesis"]
     try:
@@ -75,7 +86,7 @@ def is_book(name, df=books_df): #worker
 
     if db or wiki:
         return(name, True)
-    #code for google checking books, current commented since it breaks api limits with concurrency
+    #TODO code for google checking books, current commented since it breaks api limits with concurrency
     
 #     links = search(name)
 #     websites_matched = 0
@@ -96,7 +107,7 @@ def is_book(name, df=books_df): #worker
     
     return (name, False)
 
-def is_person(name):
+def is_person(name): #takes in name of person and returns full name is possible
     try:
         result = wikipedia.search(name)[0]
         if len(result.split(" "))>1 and name in result:
@@ -106,14 +117,13 @@ def is_person(name):
     except:
         return("none", False)
 
-def all_ents(doc):
-    doc.user_data["entis"] = [(ent.text, ent.label_) for ent in doc.ents]
+def all_ents(doc): #sets all ents as a part of doc, just incase for serializatoin
+    doc.user_data["entis"] = [(ent.text, ent.label_) for ent in doc.ents] 
     return doc
 
 nlp.add_pipe(all_ents, name="getallents", after= "ner")
 
-def keep_ents(doc):
-    books, people, places = [], [], []
+def keep_ents(doc): #keep only places, people, and books by verifying the entities
     ents = [e for e in doc.user_data["entis"] if e[0].replace(".","").lower()!="phd"]
     
     doc.user_data["places"] = list(set([e[0] for e in ents if e[1]=="LOC" or e[1]=="GPE"]))
@@ -124,7 +134,6 @@ def keep_ents(doc):
     with concurrent.futures.ThreadPoolExecutor(max_workers = 30) as executor:
         result = [executor.submit(is_person, p) for p in people]
     for future in concurrent.futures.as_completed(result):
-#         print(future.result())
         if future.result()[1]==True:
             finalpeople.append(future.result()[0])
     doc.user_data["people"] = finalpeople
@@ -137,15 +146,10 @@ def keep_ents(doc):
     for future in concurrent.futures.as_completed(result):
         if future.result()[1]==True:
             allbooks.append(future.result()[0])
-    doc.user_data["books"] =allbooks
+    doc.user_data["books"] = allbooks
     return doc
 
 nlp.add_pipe(keep_ents,name="getfilteredents", after="getallents")
-
-
-
-
-
 
 
 def att_to_csv(docs, atts):
@@ -155,7 +159,6 @@ def att_to_csv(docs, atts):
 #     similar_words implement dictionary to store similar words that were deleted
     while i<len(all_attributes)-1: #remove similar or subwords
         str1, str2 = all_atts[i], all_atts[i+1]
-#         print(all_attributes[str2])
         if str2 in str1 or (SequenceMatcher(a=str1,b=str2).ratio()>.8 and len(str1)>len(str2)):
             toRemove = all_attributes.get(str2) #list of similar words moving
             toKeep =  all_attributes.get(str1)
@@ -191,7 +194,6 @@ def att_to_csv(docs, atts):
     
     i = len(guests) + len(all_attributes) #make keys for final edges
 
-#     print(all_attributes_dict.get((new_dic.get('A Course in Miracles')[0])))
     edges = []
     for doc in docs:
         current_name = guests_dict.get(doc.user_data["guest"]) #get graph id for each guest in doc
@@ -199,7 +201,6 @@ def att_to_csv(docs, atts):
             if new_dic.get(mention):
 #                 print(new_dic.get(mention))
                 edges.append((current_name, all_attributes_dict.get(new_dic.get(mention)[0]))) #from speaker to mention of base book
-#     print(edges)
     edges_dict=dict(zip(edges, np.arange(i, i+len(edges))))
     
     
@@ -216,11 +217,3 @@ def att_to_csv(docs, atts):
         writer.writerow(["id", "source", "target", "value"])
         for key, value in edges_dict.items():
             writer.writerow([value, key[0], key[1], 1])
-
-
-# from pyspark import SparkContext, SparkConf
-
-
-# conf = SparkConf().setAppName("pyspark-shell").setMaster('local[*]').set("spark.executor.memory", "10g").set("spark.driver.memory", "10g").set('spark.driver.maxResultSize', "10G")
-# sc = SparkContext(conf=conf)
-    
