@@ -39,8 +39,6 @@ def summarize(doc): #pipeline component to include summary for each doc processe
 nlp.add_pipe(summarize,name="getsummary", last=True)
 
 
-
-
 def subtopics(doc):
     sents = [sent.text for sent in doc.sents]
     dictionary, model = generate_model("black.txt", 2700)
@@ -50,7 +48,7 @@ def subtopics(doc):
     stamps = get_algo_timestamps(one_topic_confi) #algo generated timestamps
     process_subtopics = []
     i = 0
-    with nlp.disable_pipes("getsubtopics", "getallents", "getfilteredents", "ner"):
+    with nlp.disable_pipes("getsubtopics", "getallents", "ner"): #"getfilteredents",
         while i<len(stamps)-1:
             process_subtopics.append(nlp(" ".join(sents[stamps[i][0]:stamps[i+1][0]])))
             i+=1
@@ -63,11 +61,11 @@ def subtopics(doc):
 
 nlp.add_pipe(subtopics, name="getsubtopics", after="getsummary")
 
-def is_book1(name, df=books_df): #worker
+def is_book(name, df=books_df): #worker
     db, wiki, = False, False  
     if name in df.title.values:
         db = True
-    similar = ["book", "volume", "novel", "work", "publication", "title", "treatise"]
+    similar = ["book", "volume", "novel", "work", "publication", "title", "treatise", "thesis"]
     try:
         summ = wikipedia.summary(name, sentences=3)
         if any([x in summ.lower() for x in similar]):
@@ -98,29 +96,48 @@ def is_book1(name, df=books_df): #worker
     
     return (name, False)
 
+def is_person(name):
+    try:
+        result = wikipedia.search(name)[0]
+        if len(result.split(" "))>1 and name in result:
+            return(result, True)
+        else:
+            return (name, False)
+    except:
+        return("none", False)
+
 def all_ents(doc):
     doc.user_data["entis"] = [(ent.text, ent.label_) for ent in doc.ents]
     return doc
 
-nlp.add_pipe(all_ents, name="getallents", after= "getsubtopics")
+nlp.add_pipe(all_ents, name="getallents", after= "ner")
 
 def keep_ents(doc):
     books, people, places = [], [], []
-    ents = doc.user_data["entis"]
-    potential = ["WORK_OF_ART"]
+    ents = [e for e in doc.user_data["entis"] if e[0].replace(".","").lower()!="phd"]
     
-    doc.user_data["places"] = list(set([ent for ent,label in ents if label=="LOC" or label=="GPE"]))
-    doc.user_data["people"] = list(set([ent for ent,label in ents if label=="PERSON"]))
-        
-    #parallel processing to verify books
+    doc.user_data["places"] = list(set([e[0] for e in ents if e[1]=="LOC" or e[1]=="GPE"]))
+    
+    #parallel processing to verify people and get full names from wikipedia
+    people = list(set([e[0] for e in ents if e[1]=="PERSON"]))
+    finalpeople = []
     with concurrent.futures.ThreadPoolExecutor(max_workers = 30) as executor:
-        result = [executor.submit(is_book1, e[0]) for e in ents if e[1] in potential]
+        result = [executor.submit(is_person, p) for p in people]
+    for future in concurrent.futures.as_completed(result):
+#         print(future.result())
+        if future.result()[1]==True:
+            finalpeople.append(future.result()[0])
+    doc.user_data["people"] = finalpeople
+    
+    #parallel processing to verify books
+    books = list(set([e[0] for e in ents if e[1]=="WORK_OF_ART"]))
+    allbooks = []
+    with concurrent.futures.ThreadPoolExecutor(max_workers = 30) as executor:
+        result = [executor.submit(is_book, book) for book in books]
     for future in concurrent.futures.as_completed(result):
         if future.result()[1]==True:
-            books.append(future.result()[0])
-    
-    doc.user_data["books"] = list(set(books))
-    
+            allbooks.append(future.result()[0])
+    doc.user_data["books"] =allbooks
     return doc
 
 nlp.add_pipe(keep_ents,name="getfilteredents", after="getallents")

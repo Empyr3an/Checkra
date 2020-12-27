@@ -85,7 +85,7 @@ def text_fix(text): #expands contractions, fixes quotations, possessive nouns us
     text = re.sub(r"\b(\w+ \w+)\s+\1\b", r"\1", text)
     text = re.sub(r"\b(\w+ \w+)\s+\1\b", r"\1", text)
     text = re.sub(r"\b(\w+ \w+ \w+)\s+\1\b", r"\1", text)
-    text = text.replace("you know, ","").replace(", you know","").replace("you know","").replace("I mean, ","").replace(" like,","")
+    text = text.replace("you know, ","").replace(", you know","").replace("you know","").replace("I mean, ","").replace(" like,","").replace("ajai","AGI")
     
     text = contractions.fix(text)
     text = text.translate(str.maketrans({"‘":"'", "’":"'", "“":"\"", "”":"\""})).replace("\n", " ").replace("a.k.a.", "also known as")
