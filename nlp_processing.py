@@ -39,7 +39,7 @@ def summarize(doc): #pipeline component to include summary for each doc processe
             summary.append(str(sorted_x[i][0]).capitalize().strip())
 
         counter += 1
-        if(counter >= 5):
+        if(counter >= 10):
             break
             
     doc.user_data["summary"] = summary #set summary as userdata for doc object
@@ -57,6 +57,7 @@ def subtopics(doc):
     stamps = get_algo_timestamps(one_topic_confi) #algo generated timestamps
     doc.user_data["stamps"] = stamps
     doc.user_data["sent_count"] = len(sents)
+    doc.user_data["word_count"] = len(doc.text.split(" "))
     process_subtopics = []
     i = 0
     with nlp.disable_pipes("getsubtopics", "getallents", "ner", "getfilteredents"): #
@@ -117,6 +118,9 @@ def is_person(name): #takes in name of person and returns full name is possible
     except:
         return("none", False)
 
+def is_place(place):
+    
+    
 def all_ents(doc): #sets all ents as a part of doc, just incase for serializatoin
     doc.user_data["entis"] = [(ent.text, ent.label_) for ent in doc.ents] 
     return doc
@@ -126,7 +130,15 @@ nlp.add_pipe(all_ents, name="getallents", after= "ner")
 def keep_ents(doc): #keep only places, people, and books by verifying the entities
     ents = [e for e in doc.user_data["entis"] if e[0].replace(".","").lower()!="phd"]
     
-    doc.user_data["places"] = list(set([e[0] for e in ents if e[1]=="LOC" or e[1]=="GPE"]))
+    places = list(set([e[0] for e in ents if e[1]=="LOC" or e[1]=="GPE"]))
+    finalplaces = []
+    with concurrent.futures.ThreadPoolExecutor(max_workers = 30) as executor:
+        result = [executor.submit(is_place, p) for p in places]
+    for future in concurrent.futures.as_completed(result):
+        if future.result()[1]==True:
+            finalplaces.append(future.result()[0])
+    doc.user_data["places"] = finalplaces
+    
     
     #parallel processing to verify people and get full names from wikipedia
     people = list(set([e[0] for e in ents if e[1]=="PERSON"]))
