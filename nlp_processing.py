@@ -111,14 +111,14 @@ def is_book(name): #worker, takes in entity name and database
 def is_person(name): #takes in name of person and returns full name is possible
     try:
         result = wikipedia.search(name)[0]
-        if len(result.split(" "))>1 and name in result:
+        if len(result.split(" "))>1 and any([part in result for part in name.split(" ")]):
             return(result, True)
         else:
             return (name, False)
     except:
         return("none", False)
 
-def is_place(place):
+# def is_place(place):
     
     
 def all_ents(doc): #sets all ents as a part of doc, just incase for serializatoin
@@ -131,13 +131,14 @@ def keep_ents(doc): #keep only places, people, and books by verifying the entiti
     ents = [e for e in doc.user_data["entis"] if e[0].replace(".","").lower()!="phd"]
     
     places = list(set([e[0] for e in ents if e[1]=="LOC" or e[1]=="GPE"]))
-    finalplaces = []
-    with concurrent.futures.ThreadPoolExecutor(max_workers = 30) as executor:
-        result = [executor.submit(is_place, p) for p in places]
-    for future in concurrent.futures.as_completed(result):
-        if future.result()[1]==True:
-            finalplaces.append(future.result()[0])
-    doc.user_data["places"] = finalplaces
+    doc.user_data["places"] = places
+#     finalplaces = []
+#     with concurrent.futures.ThreadPoolExecutor(max_workers = 30) as executor:
+#         result = [executor.submit(is_place, p) for p in places]
+#     for future in concurrent.futures.as_completed(result):
+#         if future.result()[1]==True:
+#             finalplaces.append(future.result()[0])
+#     doc.user_data["places"] = finalplaces
     
     
     #parallel processing to verify people and get full names from wikipedia
