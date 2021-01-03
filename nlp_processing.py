@@ -31,7 +31,7 @@ def summarize(doc): #pipeline component to include summary for each doc processe
                     sent_strength[sent]+=freq_word[word.text]
                 else:
                     sent_strength[sent]=freq_word[word.text]
-    
+
     summary, counter = [], 0
     sorted_x = sorted(sent_strength.items(), key=lambda kv: kv[1], reverse=True) #sort by strength of sentences
     for i in range(len(sorted_x)):
@@ -111,7 +111,7 @@ def is_book(name): #worker, takes in entity name and database
 def is_person(name): #takes in name of person and returns full name is possible
     try:
         result = wikipedia.search(name)[0]
-        if len(result.split(" "))>1 and any([part in result for part in name.split(" ")]):
+        if len(result.split(" "))>1 and any([part in result for part in name.split(" ")]): #check if first wiki search is 2 words, and part of the original name is in part of wiki search, and no parenthesis
             return(result, True)
         else:
             return (name, False)
@@ -230,3 +230,22 @@ def att_to_csv(docs, atts):
         writer.writerow(["id", "source", "target", "value"])
         for key, value in edges_dict.items():
             writer.writerow([value, key[0], key[1], 1])
+            
+def process_folder_to_docs(podcast_name, podcast_host):
+    onlyfiles = folder_to_filelist(podcast_name) #get list (complete text, filename)
+    doc_bin = DocBin(store_user_data=True) #docbin container for serialization
+    docs = [] #list of docs 
+    print("starting")
+    for doc, name in tqdm(nlp.pipe(onlyfiles, as_tuples=True)): #piping all collection of docs to make doclist and docbin
+        #each doc contains hostname, guest, title, entities mentioned, and summary
+        name = re.split("[\|]",name)
+        name=name[1:] if name[0][1:].isdigit() else name # store name of guest and topic, add to doc user data
+
+        doc.user_data["host"] = podcast_host
+        doc.user_data["guest"]= str(name[0]).replace("_"," ")
+        doc.user_data["title"]= str(name[1][:-4]).replace("_"," ")
+
+        docs.append(doc)
+        doc_bin.add(doc) #add doc to list and bin
+    
+    return docs, doc_bin
