@@ -9,7 +9,8 @@ summaries of subtopics
 places, people, books
 
 '''
-def summarize(doc): #pipeline component to include summary for each doc processed
+
+def keywords(doc):
     keyword = []
     pos_tag = ['PROPN', 'ADJ', 'NOUN', 'VERB']
     for token in doc:
@@ -22,6 +23,11 @@ def summarize(doc): #pipeline component to include summary for each doc processe
     max_freq = Counter(keyword).most_common(1)[0][1] #frequency of most common word
     for w in freq_word:
         freq_word[w] = (freq_word[w]/max_freq)
+    return freq_word
+
+def get_summary(doc): #pipeline component to include summary for each doc processed
+    freq_word = keywords(doc) #container keeps track of most common words
+    
     doc.user_data["keywords"] = [word[0] for word in freq_word.most_common(40)]    
     sent_strength={}
     for sent in doc.sents: #loop through each word in each sentence
@@ -42,9 +48,11 @@ def summarize(doc): #pipeline component to include summary for each doc processe
         if(counter >= 10):
             break
             
-    doc.user_data["summary"] = summary #set summary as userdata for doc object
-    return doc
+    return summary
 
+def summarize(doc):
+    doc.user_data["summary"]=get_summary(doc)
+    return doc
 
 nlp.add_pipe(summarize,name="getsummary", last=True)
 
@@ -60,7 +68,7 @@ def subtopics(doc):
     doc.user_data["word_count"] = len(doc.text.split(" "))
     process_subtopics = []
     i = 0
-    with nlp.disable_pipes("getsubtopics", "getallents", "ner", "getfilteredents"): #
+    with nlp.disable_pipes("getsubtopics", "gettraits", "ner"): #
         while i<len(stamps)-1:
             process_subtopics.append(nlp(" ".join(sents[stamps[i][0]:stamps[i+1][0]])))
             i+=1
@@ -72,6 +80,7 @@ def subtopics(doc):
     return doc
 
 nlp.add_pipe(subtopics, name="getsubtopics", after="getsummary")
+
 
 def is_book(name): #worker, takes in entity name and database
     db, wiki, = False, False  
@@ -87,7 +96,7 @@ def is_book(name): #worker, takes in entity name and database
 
     if db or wiki:
         return(name, True)
-    #TODO code for google checking books, current commented since it breaks api limits with concurrency
+#     TODO code for google checking books, current commented since it breaks api limits with concurrency
     
 #     links = search(name)
 #     websites_matched = 0
@@ -118,27 +127,13 @@ def is_person(name): #takes in name of person and returns full name is possible
     except:
         return("none", False)
 
-# def is_place(place):
-    
-    
-def all_ents(doc): #sets all ents as a part of doc, just incase for serializatoin
-    doc.user_data["entis"] = [(ent.text, ent.label_) for ent in doc.ents] 
-    return doc
-
-nlp.add_pipe(all_ents, name="getallents", after= "ner")
-
 def keep_ents(doc): #keep only places, people, and books by verifying the entities
-    ents = [e for e in doc.user_data["entis"] if e[0].replace(".","").lower()!="phd"]
     
-    places = list(set([e[0] for e in ents if e[1]=="LOC" or e[1]=="GPE"]))
-    doc.user_data["places"] = places
-#     finalplaces = []
-#     with concurrent.futures.ThreadPoolExecutor(max_workers = 30) as executor:
-#         result = [executor.submit(is_place, p) for p in places]
-#     for future in concurrent.futures.as_completed(result):
-#         if future.result()[1]==True:
-#             finalplaces.append(future.result()[0])
-#     doc.user_data["places"] = finalplaces
+    ents = [(ent.text, ent.label_) for ent in doc.ents]
+    ents = [e for e in ents if e[0].replace(".","").lower()!="phd"] #filter stuff and add label
+    
+    doc.user_data["traits"]={}
+    
     
     
     #parallel processing to verify people and get full names from wikipedia
@@ -149,7 +144,7 @@ def keep_ents(doc): #keep only places, people, and books by verifying the entiti
     for future in concurrent.futures.as_completed(result):
         if future.result()[1]==True:
             finalpeople.append(future.result()[0])
-    doc.user_data["people"] = finalpeople
+    doc.user_data["traits"].update({"People":finalpeople})
     
     #parallel processing to verify books
     books = list(set([e[0] for e in ents if e[1]=="WORK_OF_ART"]))
@@ -159,93 +154,84 @@ def keep_ents(doc): #keep only places, people, and books by verifying the entiti
     for future in concurrent.futures.as_completed(result):
         if future.result()[1]==True:
             allbooks.append(future.result()[0])
-    doc.user_data["books"] = allbooks
+    doc.user_data["traits"].update({"Books":allbooks})
+    
+    doc.user_data["traits"].update({"Topics":[word[0] for word in keywords(doc).most_common(40)]})
+    
+    doc.user_data["traits"].update({"Places":list(set([e[0] for e in ents if e[1]=="LOC" or e[1]=="GPE"]))})
+    doc.user_data["traits"].update({"Products/Companies":list(set([e[0] for e in ents if e[1]=="ORG" or e[1]=="PRODUCT"]))})
+    doc.user_data["traits"].update({"Events":list(set([e[0] for e in ents if e[1]=="EVENT"]))})
+    doc.user_data["traits"].update({"Laws":list(set([e[0] for e in ents if e[1]=="LAW"]))})
+    doc.user_data["traits"].update({"Identity Groups":list(set([e[0] for e in ents if e[1]=="NORP"]))})
+    
     return doc
 
-nlp.add_pipe(keep_ents,name="getfilteredents", after="getallents")
+nlp.add_pipe(keep_ents,name="gettraits", after="ner")
 
 
-def att_to_csv(docs, atts):
-    all_atts= sorted(set([item for sublist in docs for item in sublist.user_data[atts]])) #all books
-    all_attributes=dict([(x, [x]) for x in all_atts]) #dictionary of books to become key is base book, value are similar titles
-    i = 0
-#     similar_words implement dictionary to store similar words that were deleted
-    while i<len(all_attributes)-1: #remove similar or subwords
-        str1, str2 = all_atts[i], all_atts[i+1]
-        if str2 in str1 or (SequenceMatcher(a=str1,b=str2).ratio()>.8 and len(str1)>len(str2)):
-            toRemove = all_attributes.get(str2) #list of similar words moving
-            toKeep =  all_attributes.get(str1)
+# def att_to_csv(docs, atts):
+#     all_atts= sorted(set([item for doc in docs for item in doc.user_data[atts]])) #all books
+#     all_attributes=dict([(x, [x]) for x in all_atts]) #dictionary of books to become key is base book, value are similar titles
+#     i = 0
+# #     similar_words implement dictionary to store similar words that were deleted
+#     while i<len(all_attributes)-1: #remove similar or subwords
+#         str1, str2 = all_atts[i], all_atts[i+1]
+#         if str2 in str1 or (SequenceMatcher(a=str1,b=str2).ratio()>.8 and len(str1)>len(str2)):
+#             toRemove = all_attributes.get(str2) #list of similar words moving
+#             toKeep =  all_attributes.get(str1)
             
-            try:
-                del all_attributes[str1]
-            except:
-                pass
-            all_attributes[str1] = toRemove+toKeep
-        elif str1 in str2 or (SequenceMatcher(a=str1,b=str2).ratio()>.8 and len(str1)<=len(str2)):
-            toRemove = all_attributes.get(str1) #list of similar words moving
-            toKeep =  all_attributes.get(str2)
-            try:
-                del all_attributes[str2]
-            except:
-                pass
-            all_attributes[str2] = toRemove+toKeep
+#             try:
+#                 del all_attributes[str1]
+#             except:
+#                 pass
+#             all_attributes[str1] = toRemove+toKeep
+#         elif str1 in str2 or (SequenceMatcher(a=str1,b=str2).ratio()>.8 and len(str1)<=len(str2)):
+#             toRemove = all_attributes.get(str1) #list of similar words moving
+#             toKeep =  all_attributes.get(str2)
+#             try:
+#                 del all_attributes[str2]
+#             except:
+#                 pass
+#             all_attributes[str2] = toRemove+toKeep
             
-        i+=1
-    new_dic = {} #reverse dict so that given any name, can find base
-    for k,v in all_attributes.items():
-        for x in v:
-            new_dic.setdefault(x,[]).append(k)
-    #now have dict of base books with values of similar titles
+#         i+=1
+#     new_dic = {} #reverse dict so that given any name, can find base
+#     for k,v in all_attributes.items():
+#         for x in v:
+#             new_dic.setdefault(x,[]).append(k)
+#     #now have dict of base books with values of similar titles
         
-    all_attributes_dict = dict(zip(all_attributes.keys(), np.arange(len(all_attributes)))) #create dict for all entities
+#     all_attributes_dict = dict(zip(all_attributes.keys(), np.arange(len(all_attributes)))) #create dict for all entities
     
     
-    guests = [doc.user_data["guest"] for doc in docs]
-    guests_dict = dict(zip(guests, np.arange(len(all_attributes), len(all_attributes)+len(guests))))#create dict for all main
+#     guests = [doc.user_data["guest"] for doc in docs]
+#     guests_dict = dict(zip(guests, np.arange(len(all_attributes), len(all_attributes)+len(guests))))#create dict for all main
     
-#     #now create dict for all edges by going from every doc's mentions of attribute, and adding edge from guest to attribute
+# #     #now create dict for all edges by going from every doc's mentions of attribute, and adding edge from guest to attribute
     
-    i = len(guests) + len(all_attributes) #make keys for final edges
+#     i = len(guests) + len(all_attributes) #make keys for final edges
 
-    edges = []
-    for doc in docs:
-        current_name = guests_dict.get(doc.user_data["guest"]) #get graph id for each guest in doc
-        for mention in doc.user_data[atts]:
-            if new_dic.get(mention):
-#                 print(new_dic.get(mention))
-                edges.append((current_name, all_attributes_dict.get(new_dic.get(mention)[0]))) #from speaker to mention of base book
-    edges_dict=dict(zip(edges, np.arange(i, i+len(edges))))
+#     edges = []
+#     for doc in docs:
+#         current_name = guests_dict.get(doc.user_data["guest"]) #get graph id for each guest in doc
+#         for mention in doc.user_data[atts]:
+#             if new_dic.get(mention):
+# #                 print(new_dic.get(mention))
+#                 edges.append((current_name, all_attributes_dict.get(new_dic.get(mention)[0]))) #from speaker to mention of base book
+#     edges_dict=dict(zip(edges, np.arange(i, i+len(edges))))
     
     
     
-    with open(atts+"Nodes.csv", "w+") as csv_file:
-        writer = csv.writer(csv_file)
-        writer.writerow(["id", "name", "group"])
-        for ind, key in enumerate(all_attributes.keys()): #key is attriubte name, value is id
-            writer.writerow([ind, key, 2])
-        for key, value in guests_dict.items():
-            writer.writerow([value, key, 1]) # group 2 is entities, group 1 is speakers
-    with open(atts+"Edges.csv", "w+") as csv_file:
-        writer = csv.writer(csv_file)
-        writer.writerow(["id", "source", "target", "value"])
-        for key, value in edges_dict.items():
-            writer.writerow([value, key[0], key[1], 1])
+#     with open(atts+"Nodes.csv", "w+") as csv_file:
+#         writer = csv.writer(csv_file)
+#         writer.writerow(["id", "name", "group"])
+#         for ind, key in enumerate(all_attributes.keys()): #key is attriubte name, value is id
+#             writer.writerow([ind, key, 2])
+#         for key, value in guests_dict.items():
+#             writer.writerow([value, key, 1]) # group 2 is entities, group 1 is speakers
+#     with open(atts+"Edges.csv", "w+") as csv_file:
+#         writer = csv.writer(csv_file)
+#         writer.writerow(["id", "source", "target", "value"])
+#         for key, value in edges_dict.items():
+#             writer.writerow([value, key[0], key[1], 1])
             
-def process_folder_to_docs(podcast_name, podcast_host):
-    onlyfiles = folder_to_filelist(podcast_name) #get list (complete text, filename)
-    doc_bin = DocBin(store_user_data=True) #docbin container for serialization
-    docs = [] #list of docs 
-    print("starting")
-    for doc, name in tqdm(nlp.pipe(onlyfiles, as_tuples=True)): #piping all collection of docs to make doclist and docbin
-        #each doc contains hostname, guest, title, entities mentioned, and summary
-        name = re.split("[\|]",name)
-        name=name[1:] if name[0][1:].isdigit() else name # store name of guest and topic, add to doc user data
-
-        doc.user_data["host"] = podcast_host
-        doc.user_data["guest"]= str(name[0]).replace("_"," ")
-        doc.user_data["title"]= str(name[1][:-4]).replace("_"," ")
-
-        docs.append(doc)
-        doc_bin.add(doc) #add doc to list and bin
-    
-    return docs, doc_bin

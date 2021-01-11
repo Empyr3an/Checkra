@@ -32,13 +32,16 @@ def parallel_process(podcast): #concurrent podcast normalization by normalizing 
     return processed_podcast
 
 
-def generate_model(text, doc_size): #generate LDA model and dictionary, text is full text and doc_size is how 
+def generate_model(text, doc_size): #generate LDA model and dictionary, text is full text and doc_size is how
     wordcount = len(text.split(" "))
     processed_pod = parallel_process(podcast_to_collection(text, doc_size)) #break podcast into documents of 500 words, and return normalized documents
     dictionary = gensim.corpora.Dictionary(processed_pod) #create dictionary for words, filter extremely common and rare words
-    dictionary.filter_extremes(no_below=2, no_above=0.5, keep_n=100000) 
-    bow_corpus = [dictionary.doc2bow(doc) for doc in processed_pod] #dict for how many times each word appears
     
+    limit = 1 if len(processed_pod)<3 else 2 #min 1, max 2)
+    dictionary.filter_extremes(no_below=limit, no_above=0.5, keep_n=100000)
+    bow_corpus = [dictionary.doc2bow(doc) for doc in processed_pod] #dict for how many times each word appears
+    if len(bow_corpus)<4:
+        print(len(bow_corpus, text[0:400]))
     lda_model = gensim.models.LdaModel(bow_corpus, num_topics=int(math.log(wordcount)), id2word=dictionary,  passes=4) #lda topic model
     return dictionary, lda_model
 
@@ -62,7 +65,7 @@ def basic_completion(top_con):
     sents = top_con[:,0]
     i = 0
     while i <len(top_con): #fill in values for sentences with no topic
-        
+
         if np.array_equal(top_con[i], [-1,-1]): #if element is empty
 
             nhood = np.array([a for a in top_con[max(0, i-3):min(len(sents), i+3)] if a[0]!=-1]) #6 points around a empty point
@@ -78,17 +81,17 @@ def basic_completion(top_con):
              #set empty point to avg of points
         i+=1
     i = 0
-    
+
     while i<len(top_con): #fill in values for sentences with conflicting neighbors
         if top_con[i][0] != top_con[max(0, i-1)][0] or top_con[i][0]!= top_con[min(len(sents)-1, i+1)][0]: #if sent topic not equal to both sides
             neigh_mode = top_con[max(0, i-3):min(len(sents), i+3)] #neighborhood of irregular sent
             if top_con[i][0]!=stats.mode(neigh_mode[:,0])[0] and np.count_nonzero(neigh_mode[:,0] == stats.mode(neigh_mode[:,0])[0])>3:
                 conf_neigh = np.array([arr[1] for arr in neigh_mode if arr[0]==stats.mode(neigh_mode[:,0])[0]]) #confidences of neighborhood mode
                 top_con[i] = np.array([stats.mode(neigh_mode[:,0])[0],np.average(conf_neigh)]) #sentence topic equal to mode topic and confidence of mode topic
-        i+=1  
+        i+=1
     return top_con #return array of sentence with smoother topics
 
-            
+
 
 def get_algo_timestamps(one_topic_confi): #returns array of long chains of topics after smoothing
     stream_data = []
@@ -141,7 +144,7 @@ def get_real_timestamps(soup, sents, timesfolder, file): #return timestamps from
 
     with open(timesfolder+file, "r") as r:#scraped timestamps
         chapters = [line.split(" - ")[0] for line in r.readlines()]#store only times
-        
+
     breaks = []
     i,j=0,0
     while i<len(chapters):
