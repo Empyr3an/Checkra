@@ -28,7 +28,6 @@ def keywords(doc):
 def get_summary(doc): #pipeline component to include summary for each doc processed
     freq_word = keywords(doc) #container keeps track of most common words
     
-    doc.user_data["keywords"] = [word[0] for word in freq_word.most_common(40)]    
     sent_strength={}
     for sent in doc.sents: #loop through each word in each sentence
         for word in sent:
@@ -48,10 +47,12 @@ def get_summary(doc): #pipeline component to include summary for each doc proces
         if(counter >= 10):
             break
             
-    return summary
+    return summary, freq_word
 
 def summarize(doc):
-    doc.user_data["summary"]=get_summary(doc)
+    summary, keywords = get_summary(doc)
+    doc.user_data["summary"]=summary
+    doc.user_data["keywords"] = [word[0] for word in keywords.most_common(40)]    
     return doc
 
 nlp.add_pipe(summarize,name="getsummary", last=True)
@@ -128,12 +129,16 @@ def is_person(name): #takes in name of person and returns full name is possible
         return("none", False)
 
 def keep_ents(doc): #keep only places, people, and books by verifying the entities
-    
-    ents = [(ent.text, ent.label_) for ent in doc.ents]
+    stop=["THE", "A"]
+    ents = []
+    for ind, e in enumerate([(ent.text, ent.label_) for ent in doc.ents]):
+        if e[0].split(" ",1)[0].upper() in stop:
+            ents.append((e[0].split(" ",1)[1].title(), e[1]))
+        else:
+            ents.append((e[0].title(), e[1]))
+            
     ents = [e for e in ents if e[0].replace(".","").lower()!="phd"] #filter stuff and add label
-    
     doc.user_data["traits"]={}
-    
     
     
     #parallel processing to verify people and get full names from wikipedia
@@ -164,6 +169,9 @@ def keep_ents(doc): #keep only places, people, and books by verifying the entiti
     doc.user_data["traits"].update({"Laws":list(set([e[0] for e in ents if e[1]=="LAW"]))})
     doc.user_data["traits"].update({"Identity Groups":list(set([e[0] for e in ents if e[1]=="NORP"]))})
     
+    all_ents = ["LOC", "GPE", "ORG", "PRODUCT", "EVENT", "LAW", "NORP", "PERSON", "WORK_OF_ART"]
+    
+    doc.user_data["traits"].update({"All Mentions":list(set([e[0] for e in ents if e[1] in all_ents]))})
     return doc
 
 nlp.add_pipe(keep_ents,name="gettraits", after="ner")
