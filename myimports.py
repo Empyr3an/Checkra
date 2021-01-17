@@ -3,7 +3,6 @@ import os
 from os import listdir
 from os.path import isfile, join
 import distutils.core
-import Cython.Build
 import re
 import json
 import csv
@@ -15,8 +14,6 @@ from tqdm import tqdm
 from pprint import pprint
 import math
 
-import multiprocessing as mp
-import subprocess
 import concurrent.futures
 
 
@@ -24,7 +21,7 @@ import concurrent.futures
 
 
 from urllib.parse import parse_qs, urlparse
-import pandas as pd
+
 import numpy as np
 import networkx as nx
 import matplotlib.pyplot as plt
@@ -44,18 +41,6 @@ import contractions
 from difflib import SequenceMatcher
 
 
-import gensim
-from gensim import corpora, models
-from gensim.utils import simple_preprocess
-from gensim.parsing.preprocessing import STOPWORDS
-
-import nltk
-from nltk.corpus import wordnet
-from nltk.stem import WordNetLemmatizer, SnowballStemmer
-from nltk.stem.porter import *
-import numpy as np
-stemmer = SnowballStemmer('english')
-
 
 import spacy
 from spacy.tokens import DocBin
@@ -74,11 +59,16 @@ import pymongo
 from pymongo import MongoClient
 
 
-from checkra.processing import insights
+from checkra import insights, text_clean
+from checkra.text_clean import trim_ents
+
+from checkra.topics.preprocess import preprocess
+from checkra.topics.generate_model import generate_model
+
+from checkra.topics.smooth_topics import get_algo_timestamps
+from checkra.topics.assign_confidences import load_confidences
 
 
-
-books_df = pd.read_csv('csvs/books_clean.csv')
 nlp = spacy.load('en_core_web_sm')
 
 
