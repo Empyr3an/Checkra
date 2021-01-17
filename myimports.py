@@ -74,10 +74,12 @@ import pymongo
 from pymongo import MongoClient
 
 
+from checkra.processing import insights
+
 
 
 books_df = pd.read_csv('csvs/books_clean.csv')
-nlp = spacy.load('en_core_web_md')
+nlp = spacy.load('en_core_web_sm')
 
 
 
