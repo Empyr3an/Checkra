@@ -131,12 +131,21 @@ def is_person(name): #takes in name of person and returns full name is possible
 def keep_ents(doc): #keep only places, people, and books by verifying the entities
     stop=["THE", "A"]
     ents = []
-    for ind, e in enumerate([(ent.text, ent.label_) for ent in doc.ents]):
-        if e[0].split(" ",1)[0].upper() in stop:
-            ents.append((e[0].split(" ",1)[1].title(), e[1]))
-        else:
-            ents.append((e[0].title(), e[1]))
-            
+    
+    try:
+        for ind, e in enumerate([(ent.text, ent.label_) for ent in doc.ents]):
+            if e[0].split(" ",1)[0].upper() in stop:
+                ents.append((e[0].split(" ",1)[1].title(), e[1]))
+            else:
+                ents.append((e[0].title(), e[1]))
+    except Exception as e:
+        print(e)
+#         for ind, sent in enumerate(doc.sents):
+#             if ind<3:
+#                 print(sent.text)
+#             else:
+#                 break
+                
     ents = [e for e in ents if e[0].replace(".","").lower()!="phd"] #filter stuff and add label
     doc.user_data["traits"]={}
     
