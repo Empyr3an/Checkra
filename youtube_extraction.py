@@ -1,3 +1,8 @@
+from youtube_search import YoutubeSearch
+import googleapiclient.discovery
+
+import requests
+import os
 
 youtube = googleapiclient.discovery.build("youtube", "v3", developerKey = "AIzaSyB0233gX6wBenzJTrDcLxH0tzH8cp9Ldi4") #connect to api
 

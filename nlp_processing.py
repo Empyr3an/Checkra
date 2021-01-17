@@ -1,6 +1,7 @@
 
 from checkra.entities.books import is_book
 from checkra.entities.people import is_person
+import concurrent.futures
 
 def summarize(doc):
     doc.user_data["summary"]=insights.summary(doc)
@@ -78,6 +79,8 @@ def keep_ents(doc): #keep only places, people, and books by verifying the entiti
 
 nlp.add_pipe(keep_ents,name="gettraits", after="ner")
 
+
+from difflib import SequenceMatcher
 
 # def att_to_csv(docs, atts):
 #     all_atts= sorted(set([item for doc in docs for item in doc.user_data[atts]])) #all books
