@@ -30,7 +30,7 @@ def subtopics(doc):
     doc.user_data["word_count"] = len(doc.text.split(" "))
     process_subtopics = []
     i = 0
-    with nlp.disable_pipes("getsubtopics", "gettraits", "ner"): #
+    with nlp.disable_pipes("getsubtopics", "ner"): #"gettraits", 
         while i<len(stamps)-1:
             process_subtopics.append(nlp(" ".join(sents[stamps[i][0]:stamps[i+1][0]])))
             i+=1
@@ -77,12 +77,12 @@ def keep_ents(doc): #keep only places, people, and books by verifying the entiti
     
     all_ents = ["LOC", "GPE", "ORG", "PRODUCT", "EVENT", "LAW", "NORP", "PERSON", "WORK_OF_ART"]
     
-    doc.user_data["traits"].update({"All Mentions":list(set([e[0] for e in ents if e[1] in all_ents]))})
+    doc.user_data["traits"].update({"All Entities":list(set([e[0] for e in ents if e[1] in all_ents]))})
     return doc
 
 
 
-nlp = spacy.load("en_core_web_sm")
+nlp = spacy.load("en_core_web_md")
 nlp.add_pipe(keep_ents,name="gettraits", after="ner")    
 nlp.add_pipe(summarize,name="getsummary")
 nlp.add_pipe(subtopics, name="getsubtopics", after="getsummary")
