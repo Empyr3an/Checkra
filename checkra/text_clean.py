@@ -2,6 +2,7 @@ import contractions
 import re
 from difflib import SequenceMatcher
 import string
+import unicodedata2
 
 def text_fix(text): #expands contractions, fixes quotations, possessive nouns use special character
     text = re.sub(r"\b(\w+)\s+\1\b", r"\1", text) #delete repeated phrases, and unnecessary words
@@ -10,18 +11,19 @@ def text_fix(text): #expands contractions, fixes quotations, possessive nouns us
     text = re.sub(r"\b(\w+ \w+ \w+)\s+\1\b", r"\1", text)
     text = contractions.fix(text)
     
-    text = text.replace("you know, ","").replace(", you know","").replace("you know","").replace("I mean, ","").replace(" like,","").replace("um","")
+    text = text.replace("you know, ","").replace(", you know","").replace(" you know","").replace("I mean, ","").replace(" like,","").replace(" um, ","")
     text = text.replace("ajai","AGI").replace("A.I.", "AI").replace("A.I","AI").replace("Ajai", "AGI").replace("Ai","AI")
-    text = text.replace("DC", "District of Columbia").replace("dc", "District of Columbia")
+#     text = text.replace("DC", "District of Columbia").replace("dc", "District of Columbia")
     
     text = text.translate(str.maketrans({"‘":"'", "’":"'", "“":"\"", "”":"\""})).replace("\n", " ").replace("a.k.a.", "also known as")
     return re.sub(r"([a-z])'s",r"\1’s", text)
 
 
-
+#consider using multidict to combine entities
 def trim_ents(doc): #trim words from beginning of entity
     stop=["THE", "A"]
     stop_ents = ["DATE", "TIME", "CARDINAL", "MONEY", "PERCENT", "ORDINAL"]
+    bad_ents =  ["olumbiaast", "Nber", "Han", "Kashyap"]
     ents1 = list(set([(ent.text, ent.label_) for ent in doc.ents if len(ent.text)>2]))
     ents1 = [e for e in ents1 if e[0].replace(".","").lower()!="phd"] #filter stuff and add label
     ents1 = [(text, label) for text, label in ents1 if not text.isdigit() and label not in stop_ents]
@@ -66,7 +68,7 @@ def strip_accents(text):
     except NameError: # unicode is a default on python 3 
         pass
 
-    text = unicodedata.normalize('NFD', text)\
+    text = unicodedata2.normalize('NFD', text)\
            .encode('ascii', 'ignore')\
            .decode("utf-8")
 

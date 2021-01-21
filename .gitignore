@@ -1,6 +1,5 @@
+data/*
 *.txt
-*.csv
-*/
-!htmlstuff.txt
-books_clean.csv
-!checkra/
+checkra/data/*
+*checkpoints*
+*pycache*
